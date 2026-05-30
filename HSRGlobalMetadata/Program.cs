@@ -59,12 +59,16 @@ static class Program {
         MetadataHeader.Initialize(gameAssemblyPath);
         MetadataRegistration.Initialize(gameAssemblyPath);
         CodeRegistration.Initialize(gameAssemblyPath);
+        MetadataTables.Initialize(gameAssemblyPath);
         Console.WriteLine("Intiializing cache...");
         MetadataCache.Initialize();
         Console.WriteLine("Initialization complete.");
 
         Console.WriteLine("Writing dump.cs...");
         DumpWriter.Write(folderPath);
+
+        Console.WriteLine("Writing stringliterals.json...");
+        StringLiteralWriter.Write(folderPath);
         
         Console.WriteLine("Finished.");
     }

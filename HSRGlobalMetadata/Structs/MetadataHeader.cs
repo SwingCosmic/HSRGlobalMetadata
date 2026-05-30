@@ -7,6 +7,9 @@ public class MetadataHeader : MetadataBase {
     public static MetadataHeader Instance => _instance ?? throw new Exception("Not initialized");
 
     public const int MetadataHeaderSize = 0x208;
+
+    [MetadataTag(0x08, MetadataOperation.SUB, 149860775)]
+    public int StringLiteralDataOffset { get; private set; }
     
     [MetadataTag(0x20, MetadataOperation.SUB, 1292050039)]
     public int FieldsOffset { get; private set; }
@@ -77,6 +80,9 @@ public class MetadataHeader : MetadataBase {
     [MetadataTag(0x1E4, MetadataOperation.XOR, 0x720FEF70)]
     public int MethodSpecsSize { get; private set; }
     
+    [MetadataTag(0x1F0, MetadataOperation.XOR, 0x56C7D20D)]
+    public int StringLiteralOffset { get; private set; }
+
     [MetadataTag(0x1FC, MetadataOperation.XOR, 0x6238CDB0)]
     public int FieldDefaultValuesOffset { get; private set; }
 

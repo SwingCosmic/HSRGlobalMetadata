@@ -3,7 +3,7 @@
 A proof-of-concept static analysis tool to extract metadata information from `Honkai: Star Rail`.
 
 ## About
-This tool generates a `dump.cs` file extracted from the metadata of the game, and from the `GameAssembly.dll` binary. It works completely statically, which means launching the game process is not required.
+This tool generates a `dump.cs` and `stringliterals.json` file extracted from the metadata of the game, and from the `GameAssembly.dll` binary. It works completely statically, which means launching the game process is not required.
 
 The tool has been tested to work with the `OSPRODWin4.3.0` version of the game.
 
@@ -13,7 +13,7 @@ This tool is a proof-of-concept. Some features may be missing, it may be unstabl
 ## Usage
 Builds of this project will not be provided.
 
-NET 10.0 is required.
+.NET 10.0 is required.
 
 To run it, simply do `dotnet run <path_to_game_folder>`.
 
