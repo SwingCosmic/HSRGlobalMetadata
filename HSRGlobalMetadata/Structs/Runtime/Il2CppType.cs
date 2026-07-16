@@ -31,14 +31,18 @@ public class Il2CppType {
     public ulong Data;
     public ushort Attrs;
     public byte Type;
+    public int Offset;
+
+    public const long ImageBase = 0x180000000;
     
     private string _cachedName;
 
     public Il2CppType(int offset) {
         var bytes = MetadataContext.Instance.GameAssembly;
-        Data = BitConverter.ToUInt32(bytes, offset);
-        Attrs = BitConverter.ToUInt16(bytes, offset + 4);
-        Type = bytes[offset + 6];
+        Offset = offset;
+        Data = BitConverter.ToUInt64(bytes, offset);
+        Attrs = BitConverter.ToUInt16(bytes, offset + 8);
+        Type = bytes[offset + 10];
     }
 
     public static Il2CppType FromIndex(int index) {
@@ -47,8 +51,8 @@ public class Il2CppType {
         }
         if (MetadataCache.Types != null && index < MetadataCache.Types.Length && MetadataCache.Types[index] != null)
             return MetadataCache.Types[index];
-        int offset = (int)PEHelper.RvaToOffset((uint)(MetadataRegistration.Instance.TypesRva + index * 8));
-
+        int offset = (int)PEHelper.RvaToOffset((uint)(MetadataRegistration.Instance.TypesRva + index * 16));
+        
         return new Il2CppType(offset);
     }
     
@@ -89,13 +93,13 @@ public class Il2CppType {
                 int argCount = BitConverter.ToInt32(MetadataContext.Instance.GameAssembly, instOffset);
                 long arrayRva = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, instOffset + 8);
 
-                int arrayOffset = (int)PEHelper.RvaToOffset((uint)(arrayRva - 0x180000000));
+                int arrayOffset = (int)PEHelper.RvaToOffset((uint)(arrayRva - ImageBase));
                 
                 var args = new List<string>(argCount);
 
                 for (int i = 0; i < argCount; i++) {
                     long ptr = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, arrayOffset + i * 8);
-                    int typeArgOffset = (int)PEHelper.RvaToOffset((uint)(ptr - 0x180000000));
+                    int typeArgOffset = (int)PEHelper.RvaToOffset((uint)(ptr - ImageBase));
                     
                     args.Add(new Il2CppType(typeArgOffset).Name());
                 }
@@ -106,21 +110,20 @@ public class Il2CppType {
             
             case 0x0F:
                 if (Data == 0) return "void*";
-                return FromIndex((int)Data).Name() + "*";
-            
+                return new Il2CppType((int)PEHelper.RvaToOffset((uint)(Data - ImageBase))).Name() + "*";
+
             case 0x14:
-                ulong arrayEntryOffset = PEHelper.RvaToOffset((uint)MetadataRegistration.Instance.ArrayOffset + (uint)Data * 32);
+                ulong arrayEntryOffset = PEHelper.RvaToOffset((uint)(Data-ImageBase));
                 long arrayElemPtr = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, (int)arrayEntryOffset);
-                ulong arrayElemOffset = PEHelper.RvaToOffset((uint)(arrayElemPtr - 0x180000000));
+                ulong arrayElemOffset = PEHelper.RvaToOffset((uint)(arrayElemPtr - ImageBase));
                 int arrayRank = MetadataContext.Instance.GameAssembly[(int)arrayEntryOffset + 8];
                 return $"{new Il2CppType((int)arrayElemOffset).Name()}[{new string(',', arrayRank - 1)}]";
-            
-            case 0x1D:
-                return FromIndex((int)Data).Name() + "[]";
 
+            case 0x1D:
+                return new Il2CppType((int)PEHelper.RvaToOffset((uint)(Data - ImageBase))).Name() + "[]";
 
             case 0x10:
-                ulong innerRva = Data - 0x180000000;
+                ulong innerRva = Data - ImageBase;
                 ulong innerOffset = PEHelper.RvaToOffset((uint)innerRva);
                 return new Il2CppType((int)innerOffset).Name();
             
@@ -140,6 +143,7 @@ public class Il2CppType {
                 return StringProcessor.Decrypt(finalIndex);
             
             default:
+                Console.WriteLine($"Unsupported type: {Type}, data: {Data:X}, RVA: 0x{PEHelper.OffsetToRva((ulong)Offset):X}");
                 return "object";
         }
     }
