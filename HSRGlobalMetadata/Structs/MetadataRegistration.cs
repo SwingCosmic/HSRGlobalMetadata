@@ -21,7 +21,7 @@ public class MetadataRegistration : MetadataBase {
     private long ToFileOffset(long va) => va - ImageBase;
     private long ReadPtr(int offset) => ToFileOffset(BitConverter.ToInt64(_bytes, offset));
 
-    [MetadataTag(0x80, MetadataOperation.SUB, 458010256)]
+    [MetadataTag(0x48, MetadataOperation.SUB, 1455078204)]
     public int TypeInfoCount { get; set; }
     
     public long TypesRva { get; private set; }
@@ -29,8 +29,8 @@ public class MetadataRegistration : MetadataBase {
     public long ArrayOffset { get; set; }
     
     protected override void PostProcess() {
-        GenericInstsOffset = ReadPtr(0x20);
-        TypesRva = ReadPtr(0x68);
-        ArrayOffset = ReadPtr(0x90);
+        GenericInstsOffset = ReadPtr(0x38);
+        TypesRva = ReadPtr(0x80);
+        ArrayOffset = ReadPtr(0x70);
     }
 }

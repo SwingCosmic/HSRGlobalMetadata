@@ -5,7 +5,7 @@ A proof-of-concept static analysis tool to extract metadata information from `Ho
 ## About
 This tool generates a `dump.cs` and `stringliterals.json` file extracted from the metadata of the game, and from the `GameAssembly.dll` binary. It works completely statically, which means launching the game process is not required.
 
-The tool has been tested to work with the `OSPRODWin4.4.0` version of the game.
+The tool has been tested to work with the `OSPRODWin4.5.0` version of the game.
 
 ## Important
 This tool is a proof-of-concept. Some features may be missing, it may be unstable, or break with game updates. Older versions are not supported, and newer versions can break the tool.

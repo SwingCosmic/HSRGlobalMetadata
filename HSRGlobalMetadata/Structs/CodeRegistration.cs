@@ -25,6 +25,6 @@ public class CodeRegistration : MetadataBase {
     public long MethodPointer { get; private set; }
 
     protected override void PostProcess() {
-        MethodPointer = ReadPtr(0x88);
+        MethodPointer = ReadPtr(0x40);
     }
 }
