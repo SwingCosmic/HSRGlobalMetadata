@@ -9,7 +9,8 @@ public class Il2CppFieldDefinition : MetadataBase {
     private readonly int _fieldStart;
     private readonly int _fieldOffsetStart;
 
-    public Il2CppFieldDefinition(int fieldStart, int fieldOffsetStart, int index) : base(MetadataContext.Instance.Metadata, MetadataHeader.Instance.FieldsOffset + index * 8) {
+    public Il2CppFieldDefinition(int fieldStart, int fieldOffsetStart, int index) : base(MetadataContext.Instance.Metadata,
+        MetadataHeader.Instance.FieldsOffset + index * Configuration.RuntimeConfiguration.Current.Layout.FieldDefinitionSize) {
         _index = index;
         _fieldStart = fieldStart;
         _fieldOffsetStart = fieldOffsetStart;
@@ -30,7 +31,8 @@ public class Il2CppFieldDefinition : MetadataBase {
     protected override void PostProcess() {
         var lcd = -1388221511 - 744344320 * (_index + 1954887780);
 
-        Offset = BitConverter.ToUInt32(_bytes, MetadataHeader.Instance.FieldOffsetsOffset + (_index - _fieldStart + _fieldOffsetStart) * 4);
+        Offset = BitConverter.ToUInt32(_bytes, MetadataHeader.Instance.FieldOffsetsOffset +
+            (_index - _fieldStart + _fieldOffsetStart) * Configuration.RuntimeConfiguration.Current.Layout.IndexSize);
         TypeIndex += lcd;
         NameIndex += lcd;
 

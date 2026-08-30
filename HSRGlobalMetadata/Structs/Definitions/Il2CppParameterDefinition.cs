@@ -15,7 +15,8 @@ public class Il2CppParameterDefinition : MetadataBase {
     public Il2CppType Type { get; private set; }
     public string Name { get; private set; }
     
-    public Il2CppParameterDefinition(int index) : base(MetadataContext.Instance.Metadata, MetadataHeader.Instance.ParametersOffset + index * 8) {
+    public Il2CppParameterDefinition(int index) : base(MetadataContext.Instance.Metadata,
+        MetadataHeader.Instance.ParametersOffset + index * Configuration.RuntimeConfiguration.Current.Layout.ParameterDefinitionSize) {
         _index = index;
         Populate();
     }

@@ -6,7 +6,8 @@ namespace HSRGlobalMetadata.Structs.Definitions;
 public class Il2CppGenericParameterConstraintDefinition : MetadataBase {
     public string TypeName { get; private set; }
 
-    public Il2CppGenericParameterConstraintDefinition(int index) : base(MetadataContext.Instance.Metadata, MetadataHeader.Instance.GenericParameterConstraintsOffset + 4 * index) {
+    public Il2CppGenericParameterConstraintDefinition(int index) : base(MetadataContext.Instance.Metadata,
+        MetadataHeader.Instance.GenericParameterConstraintsOffset + Configuration.RuntimeConfiguration.Current.Layout.GenericParameterConstraintDefinitionSize * index) {
         Populate();
     }
 

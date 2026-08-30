@@ -18,7 +18,8 @@ public class Il2CppGenericParameterDefinition : MetadataBase {
     
     public List<string> Constraints { get; } = new();
 
-    public Il2CppGenericParameterDefinition(int index) : base(MetadataContext.Instance.Metadata, MetadataHeader.Instance.GenericParametersOffset + 14 * index) {
+    public Il2CppGenericParameterDefinition(int index) : base(MetadataContext.Instance.Metadata,
+        MetadataHeader.Instance.GenericParametersOffset + Configuration.RuntimeConfiguration.Current.Layout.GenericParameterDefinitionSize * index) {
         _index = index;
         Populate();
     }
