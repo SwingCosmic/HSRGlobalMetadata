@@ -14,8 +14,9 @@ public static class MetadataCache {
     
     public static void Initialize() {
         var header = MetadataHeader.Instance;
-        int typeCount = header.TypeDefinitionsSize / 70;
-        int imageCount = header.ImagesSize / 40;
+        var layout = Configuration.RuntimeConfiguration.Current.Layout;
+        int typeCount = header.TypeDefinitionsSize / layout.TypeDefinitionSize;
+        int imageCount = header.ImagesSize / layout.ImageDefinitionSize;
         if (header.TypeDefinitionsSize > MetadataContext.Instance.Metadata.Length) {
           throw new Exception("Sanity check failed for metadata validity.");
         }        
@@ -46,7 +47,7 @@ public static class MetadataCache {
             j++;
         }
 
-        int genericFuncCount = header.MethodSpecsSize / 12;
+        int genericFuncCount = header.MethodSpecsSize / layout.GenericFunctionDefinitionSize;
         GenericFuncDefs = new Dictionary<int, Il2CppGenericFunctionDefinition>(genericFuncCount);
         for (int i = 0; i < genericFuncCount; i++) {
             var genericFuncDef = new Il2CppGenericFunctionDefinition(i);

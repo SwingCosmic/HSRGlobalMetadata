@@ -31,9 +31,13 @@ public class Il2CppType {
     public ulong Data;
     public ushort Attrs;
     public byte Type;
+    public byte PackedFlags;
+    public byte NumModifiers;
+    public bool IsByReference;
+    public bool IsPinned;
     public int Offset;
 
-    public const long ImageBase = 0x180000000;
+    public static ulong ImageBase => Configuration.RuntimeConfiguration.Current.ImageBase;
     
     private string _cachedName;
 
@@ -43,6 +47,23 @@ public class Il2CppType {
         Data = BitConverter.ToUInt64(bytes, offset);
         Attrs = BitConverter.ToUInt16(bytes, offset + 8);
         Type = bytes[offset + 10];
+        PackedFlags = bytes[offset + 11];
+        (NumModifiers, IsByReference, IsPinned) = DecodePackedFlags(
+            PackedFlags,
+            Configuration.RuntimeConfiguration.Current.Layout.Il2CppTypeBits
+        );
+    }
+
+    public static (byte NumModifiers, bool IsByReference, bool IsPinned) DecodePackedFlags(
+        byte packedFlags,
+        Configuration.Il2CppTypeBitLayout? layout = null
+    ) {
+        layout ??= Configuration.MetadataLayout.OspProdWin450.Il2CppTypeBits;
+        return (
+            (byte)(packedFlags & layout.ModifiersMask),
+            (packedFlags & layout.ByReferenceMask) != 0,
+            (packedFlags & layout.PinnedMask) != 0
+        );
     }
 
     public static Il2CppType FromIndex(int index) {
@@ -51,7 +72,8 @@ public class Il2CppType {
         }
         if (MetadataCache.Types != null && index < MetadataCache.Types.Length && MetadataCache.Types[index] != null)
             return MetadataCache.Types[index];
-        int offset = (int)PEHelper.RvaToOffset((uint)(MetadataRegistration.Instance.TypesRva + index * 16));
+        int offset = (int)PEHelper.RvaToOffset((uint)(MetadataRegistration.Instance.TypesRva +
+            index * Configuration.RuntimeConfiguration.Current.Layout.Il2CppTypeDefinitionSize));
         
         return new Il2CppType(offset);
     }
@@ -77,7 +99,8 @@ public class Il2CppType {
                 if (GenericClassNameCache.TryGetValue(genericClassIndex, out var cached))
                     return cached;
 
-                int baseOffset = MetadataHeader.Instance.GenericClassOffset + genericClassIndex * 8;
+                int baseOffset = MetadataHeader.Instance.GenericClassOffset +
+                    genericClassIndex * Configuration.RuntimeConfiguration.Current.Layout.GenericClassDefinitionSize;
                 
                 int instIndex = BitConverter.ToInt32(MetadataContext.Instance.StartupMetadata, baseOffset + 4);
                 int typeDefIndex = BitConverter.ToInt32(MetadataContext.Instance.StartupMetadata, baseOffset);
@@ -89,17 +112,18 @@ public class Il2CppType {
                 if (instIndex == -1)
                     return openName;
                 
-                int instOffset = (int)PEHelper.RvaToOffset((uint)MetadataRegistration.Instance.GenericInstsOffset) + instIndex * 16;
+                int instOffset = (int)PEHelper.RvaToOffset((uint)MetadataRegistration.Instance.GenericInstsOffset) +
+                    instIndex * Configuration.RuntimeConfiguration.Current.Layout.GenericInstDefinitionSize;
                 int argCount = BitConverter.ToInt32(MetadataContext.Instance.GameAssembly, instOffset);
                 long arrayRva = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, instOffset + 8);
 
-                int arrayOffset = (int)PEHelper.RvaToOffset((uint)(arrayRva - ImageBase));
+                int arrayOffset = (int)PEHelper.RvaToOffset((uint)((ulong)arrayRva - ImageBase));
                 
                 var args = new List<string>(argCount);
 
                 for (int i = 0; i < argCount; i++) {
                     long ptr = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, arrayOffset + i * 8);
-                    int typeArgOffset = (int)PEHelper.RvaToOffset((uint)(ptr - ImageBase));
+                    int typeArgOffset = (int)PEHelper.RvaToOffset((uint)((ulong)ptr - ImageBase));
                     
                     args.Add(new Il2CppType(typeArgOffset).Name());
                 }
@@ -115,8 +139,10 @@ public class Il2CppType {
             case 0x14:
                 ulong arrayEntryOffset = PEHelper.RvaToOffset((uint)(Data-ImageBase));
                 long arrayElemPtr = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, (int)arrayEntryOffset);
-                ulong arrayElemOffset = PEHelper.RvaToOffset((uint)(arrayElemPtr - ImageBase));
-                int arrayRank = MetadataContext.Instance.GameAssembly[(int)arrayEntryOffset + 8];
+                ulong arrayElemOffset = PEHelper.RvaToOffset((uint)((ulong)arrayElemPtr - ImageBase));
+                int arrayRank = MetadataContext.Instance.GameAssembly[
+                    (int)arrayEntryOffset + Configuration.RuntimeConfiguration.Current.Layout.PointerSize
+                ];
                 return $"{new Il2CppType((int)arrayElemOffset).Name()}[{new string(',', arrayRank - 1)}]";
 
             case 0x1D:
@@ -129,7 +155,8 @@ public class Il2CppType {
             
             case 0x13:
             case 0x1E:
-                int genericParamOffset = MetadataHeader.Instance.GenericParametersOffset + (int)Data * 14;
+                int genericParamOffset = MetadataHeader.Instance.GenericParametersOffset +
+                    (int)Data * Configuration.RuntimeConfiguration.Current.Layout.GenericParameterDefinitionSize;
                 
                 int nameIndex = BitConverter.ToInt32(MetadataContext.Instance.Metadata, genericParamOffset);
                 int scramble = (int)(((ulong)(1252900171 *

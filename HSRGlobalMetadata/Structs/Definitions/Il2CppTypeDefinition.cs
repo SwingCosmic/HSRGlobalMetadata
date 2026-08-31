@@ -6,7 +6,8 @@ namespace HSRGlobalMetadata.Structs.Definitions;
 public class Il2CppTypeDefinition : MetadataBase {
     private readonly int _index;
 
-    public Il2CppTypeDefinition(int index) : base(MetadataContext.Instance.Metadata, MetadataHeader.Instance.TypeDefinitionsOffset + index * 70) {
+    public Il2CppTypeDefinition(int index) : base(MetadataContext.Instance.Metadata,
+        MetadataHeader.Instance.TypeDefinitionsOffset + index * Configuration.RuntimeConfiguration.Current.Layout.TypeDefinitionSize) {
         _index = index;
         Populate();
     }
@@ -82,7 +83,8 @@ public class Il2CppTypeDefinition : MetadataBase {
     }
 
     public int GetFieldOffsetIndex() {
-        int mappedIndex = BitConverter.ToInt32(MetadataContext.Instance.Metadata, MetadataHeader.Instance.TypeIndexMapOffset + 4 * _index);
+        int mappedIndex = BitConverter.ToInt32(MetadataContext.Instance.Metadata,
+            MetadataHeader.Instance.TypeIndexMapOffset + Configuration.RuntimeConfiguration.Current.Layout.IndexSize * _index);
         int fieldOffsetEntry = BitConverter.ToInt32(MetadataContext.Instance.Metadata, MetadataHeader.Instance.IdxTableBaseOffset + 12 * mappedIndex + 8);
 
         return fieldOffsetEntry;

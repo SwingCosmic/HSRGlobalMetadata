@@ -5,7 +5,8 @@ namespace HSRGlobalMetadata.Structs.Definitions;
 public class Il2CppImageDefinition : MetadataBase {
     private readonly int _index;
 
-    public Il2CppImageDefinition(int index) : base(MetadataContext.Instance.StartupMetadata, MetadataHeader.Instance.ImagesOffset + 40 * index) {
+    public Il2CppImageDefinition(int index) : base(MetadataContext.Instance.StartupMetadata,
+        MetadataHeader.Instance.ImagesOffset + Configuration.RuntimeConfiguration.Current.Layout.ImageDefinitionSize * index) {
         _index = index; 
         Populate();
     }
