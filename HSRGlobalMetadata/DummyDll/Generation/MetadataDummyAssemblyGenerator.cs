@@ -8,12 +8,18 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
     private readonly BlankDummyAssemblyGenerator _assemblySet;
     private readonly IDummyMetadataSource _source;
     private readonly TypeDefinition?[] _typeDefinitions;
+    private readonly Dictionary<TypeDefinition, int> _typeIndicesByDefinition = [];
     private readonly List<int> _generatedTypeIndices = [];
     private readonly Dictionary<int, GenericParameter> _genericParameters = [];
+    private readonly Dictionary<int, DummyGenericParameterModel> _genericParameterModels = [];
     private readonly Dictionary<int, FieldDefinition> _fieldDefinitions = [];
     private readonly Dictionary<int, MethodDefinition> _methodDefinitions = [];
+    private readonly Dictionary<int, DummyMethodModel> _methodModels = [];
     private readonly Dictionary<int, PropertyDefinition> _propertyDefinitions = [];
+    private readonly Dictionary<int, EventDefinition> _eventDefinitions = [];
+    private readonly HashSet<int> _accessorMethodIndices = [];
     private readonly MethodReference _fieldOffsetAttributeConstructor;
+    private readonly MethodReference _addressAttributeConstructor;
     private readonly TypeReference _attributeStringType;
     private readonly TypeSystem _typeSystem;
 
@@ -34,7 +40,9 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
 
         AssemblyDefinition template = _assemblySet.Assemblies[0];
         TypeDefinition fieldOffsetAttribute = template.MainModule.Types.Single(type => type.Name == "FieldOffsetAttribute");
+        TypeDefinition addressAttribute = template.MainModule.Types.Single(type => type.Name == "AddressAttribute");
         _fieldOffsetAttributeConstructor = fieldOffsetAttribute.Methods.First(method => method.IsConstructor);
+        _addressAttributeConstructor = addressAttribute.Methods.First(method => method.IsConstructor);
         _attributeStringType = template.MainModule.TypeSystem.String;
         _typeSystem = template.MainModule.TypeSystem;
         _typeDefinitions = new TypeDefinition?[source.TypeCount];
@@ -44,7 +52,11 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
         CreateTypeGenericParameters();
         AddTypeRelationships();
         CreateFields();
+        CreateMethodSkeletons();
+        AddGenericParameterConstraints();
+        PopulateMethodSignatures();
         CreatePropertiesAndAccessors();
+        CreateEvents();
 
         Report.AssemblyCount = Assemblies.Count;
     }
@@ -70,6 +82,7 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                     sourceType.Attributes
                 );
                 _typeDefinitions[index] = type;
+                _typeIndicesByDefinition.Add(type, index);
                 _generatedTypeIndices.Add(index);
                 Report.TypeCount++;
             }
@@ -111,8 +124,10 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                     );
                 }
                 var parameter = new GenericParameter(sourceParameter.Name, type);
+                parameter.Attributes = sourceParameter.Attributes;
                 type.GenericParameters.Add(parameter);
                 _genericParameters.Add(sourceParameter.MetadataIndex, parameter);
+                _genericParameterModels.Add(sourceParameter.MetadataIndex, sourceParameter);
             }
         }
     }
@@ -179,6 +194,8 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                 type.Fields.Add(field);
                 _fieldDefinitions.Add(sourceField.Index, field);
                 Report.FieldCount++;
+                if (field.IsPublic)
+                    Report.PublicFieldCount++;
 
                 bool isSerializableField = field.IsPublic && !field.IsStatic && !field.IsLiteral && !field.IsNotSerialized;
                 if (isSerializableField) {
@@ -186,6 +203,8 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                     if (Report.PlaceholderTypeCount != placeholdersBefore)
                         Report.SerializableFieldPlaceholderCount++;
                 }
+                if (field.IsPublic && Report.PlaceholderTypeCount != placeholdersBefore)
+                    Report.PublicMemberPlaceholderCount++;
 
                 if (sourceField.HasConstant)
                     ApplyFieldConstant(sourceField, field, sourceType);
@@ -194,6 +213,141 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
             }
         }
     }
+
+    private void CreateMethodSkeletons() {
+        foreach (int typeIndex in _generatedTypeIndices) {
+            TypeDefinition type = RequireType(typeIndex);
+            DummyTypeModel sourceType = _source.GetType(typeIndex);
+            for (int ordinal = 0; ordinal < sourceType.MethodCount; ordinal++) {
+                int methodIndex = checked(sourceType.MethodStart + ordinal);
+                DummyMethodModel sourceMethod;
+                try {
+                    sourceMethod = _source.GetMethod(sourceType, methodIndex);
+                }
+                catch (Exception ex) {
+                    AddDiagnostic("Error", "METHOD_SOURCE_INVALID", ex.Message, sourceType, "method", methodIndex);
+                    var fallback = new MethodDefinition(
+                        $"__invalid_method_{methodIndex}",
+                        MethodAttributes.Private,
+                        type.Module.ImportReference(_typeSystem.Void)
+                    );
+                    type.Methods.Add(fallback);
+                    _methodDefinitions[methodIndex] = fallback;
+                    Report.MethodCount++;
+                    continue;
+                }
+
+                var method = new MethodDefinition(
+                    sourceMethod.Name,
+                    sourceMethod.Attributes,
+                    type.Module.ImportReference(_typeSystem.Void)
+                ) {
+                    ImplAttributes = MethodImplAttributes.IL | MethodImplAttributes.Managed
+                };
+                type.Methods.Add(method);
+                _methodDefinitions.Add(methodIndex, method);
+                _methodModels.Add(methodIndex, sourceMethod);
+                Report.MethodCount++;
+                if (method.IsPublic)
+                    Report.PublicMethodCount++;
+
+                foreach (DummyGenericParameterModel sourceParameter in sourceMethod.GenericParameters) {
+                    if (_genericParameters.ContainsKey(sourceParameter.MetadataIndex)) {
+                        throw new InvalidDataException(
+                            $"Generic parameter metadata index {sourceParameter.MetadataIndex} is owned more than once."
+                        );
+                    }
+                    var parameter = new GenericParameter(sourceParameter.Name, method) {
+                        Attributes = sourceParameter.Attributes
+                    };
+                    method.GenericParameters.Add(parameter);
+                    _genericParameters.Add(sourceParameter.MetadataIndex, parameter);
+                    _genericParameterModels.Add(sourceParameter.MetadataIndex, sourceParameter);
+                }
+            }
+        }
+    }
+
+    private void AddGenericParameterConstraints() {
+        foreach ((int metadataIndex, GenericParameter parameter) in _genericParameters) {
+            if (!_genericParameterModels.TryGetValue(metadataIndex, out DummyGenericParameterModel? sourceParameter))
+                continue;
+            DummyTypeModel sourceType = GetOwningType(parameter);
+            foreach (DummyTypeSignature constraint in sourceParameter.Constraints ?? []) {
+                TypeReference constraintType = ResolveTypeReference(
+                    constraint,
+                    (MemberReference)parameter.Owner,
+                    sourceType,
+                    "generic constraint",
+                    metadataIndex
+                );
+                parameter.Constraints.Add(new GenericParameterConstraint(constraintType));
+                Report.GenericConstraintCount++;
+            }
+        }
+    }
+
+    private DummyTypeModel GetOwningType(GenericParameter parameter) {
+        TypeDefinition declaringType = parameter.Owner switch {
+            TypeDefinition type => type,
+            MethodDefinition method => method.DeclaringType,
+            _ => throw new InvalidDataException($"Unsupported generic parameter owner '{parameter.Owner}'.")
+        };
+        if (!_typeIndicesByDefinition.TryGetValue(declaringType, out int typeIndex))
+            throw new InvalidDataException($"Generic parameter owner type '{declaringType.FullName}' has no metadata mapping.");
+        return _source.GetType(typeIndex);
+    }
+
+    private void PopulateMethodSignatures() {
+        foreach ((int methodIndex, DummyMethodModel sourceMethod) in _methodModels) {
+            MethodDefinition method = _methodDefinitions[methodIndex];
+            if (!_typeIndicesByDefinition.TryGetValue(method.DeclaringType, out int typeIndex))
+                throw new InvalidDataException($"Method owner type '{method.DeclaringType.FullName}' has no metadata mapping.");
+            DummyTypeModel sourceType = _source.GetType(typeIndex);
+
+            method.ReturnType = ResolveTypeReference(
+                sourceMethod.ReturnType,
+                method,
+                sourceType,
+                "method return",
+                sourceMethod.Index
+            );
+            foreach (DummyParameterModel sourceParameter in sourceMethod.Parameters) {
+                TypeReference parameterType = ResolveTypeReference(
+                    sourceParameter.ParameterType,
+                    method,
+                    sourceType,
+                    "parameter",
+                    sourceParameter.Index
+                );
+                method.Parameters.Add(new ParameterDefinition(
+                    sourceParameter.Name,
+                    sourceParameter.Attributes,
+                    parameterType
+                ));
+            }
+
+            if (sourceMethod.Address != null) {
+                AddAddressAttribute(method.Module, method, sourceMethod.Address);
+                Report.AddressedMethodCount++;
+            }
+            else if (sourceMethod.AddressError != null) {
+                AddDiagnostic("Error", "METHOD_ADDRESS_INVALID", sourceMethod.AddressError,
+                    sourceType, "method", sourceMethod.Index);
+            }
+
+            if (IsDelegateType(method.DeclaringType)) {
+                method.ImplAttributes = MethodImplAttributes.Runtime | MethodImplAttributes.Managed;
+                method.Body = null;
+            }
+            else {
+                EnsureMinimalBody(method);
+            }
+        }
+    }
+
+    private static bool IsDelegateType(TypeDefinition type) =>
+        type.BaseType?.FullName is "System.MulticastDelegate" or "System.Delegate";
 
     private void CreatePropertiesAndAccessors() {
         foreach (int typeIndex in _generatedTypeIndices) {
@@ -220,10 +374,10 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                 }
 
                 MethodDefinition? getter = sourceProperty.GetterMethodIndex.HasValue
-                    ? GetOrCreateAccessor(sourceType, sourceProperty.GetterMethodIndex.Value)
+                    ? GetAccessor(sourceType, sourceProperty.GetterMethodIndex.Value)
                     : null;
                 MethodDefinition? setter = sourceProperty.SetterMethodIndex.HasValue
-                    ? GetOrCreateAccessor(sourceType, sourceProperty.SetterMethodIndex.Value)
+                    ? GetAccessor(sourceType, sourceProperty.SetterMethodIndex.Value)
                     : null;
 
                 TypeReference propertyType = GetPropertyType(sourceProperty, sourceType, getter, setter, type.Module);
@@ -234,6 +388,8 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                 type.Properties.Add(property);
                 _propertyDefinitions.Add(sourceProperty.Index, property);
                 Report.PropertyCount++;
+                if (getter?.IsPublic == true || setter?.IsPublic == true)
+                    Report.PublicPropertyCount++;
 
                 if (!TryCreateAutomaticPropertyBody(sourceProperty, sourceType, property)) {
                     EnsureMinimalBody(getter);
@@ -243,54 +399,72 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
         }
     }
 
-    private MethodDefinition GetOrCreateAccessor(DummyTypeModel sourceType, int methodIndex) {
-        if (_methodDefinitions.TryGetValue(methodIndex, out MethodDefinition? existing))
-            return existing;
+    private void CreateEvents() {
+        foreach (int typeIndex in _generatedTypeIndices) {
+            TypeDefinition type = RequireType(typeIndex);
+            DummyTypeModel sourceType = _source.GetType(typeIndex);
+            for (int ordinal = 0; ordinal < sourceType.EventCount; ordinal++) {
+                int eventIndex = checked(sourceType.EventStart + ordinal);
+                DummyEventModel sourceEvent;
+                try {
+                    sourceEvent = _source.GetEvent(sourceType, ordinal);
+                }
+                catch (Exception ex) {
+                    AddDiagnostic("Error", "EVENT_SOURCE_INVALID", ex.Message, sourceType, "event", eventIndex);
+                    var fallback = new EventDefinition(
+                        $"__invalid_event_{eventIndex}",
+                        EventAttributes.None,
+                        type.Module.ImportReference(_typeSystem.Object)
+                    );
+                    type.Events.Add(fallback);
+                    _eventDefinitions[eventIndex] = fallback;
+                    Report.EventCount++;
+                    Report.PlaceholderTypeCount++;
+                    continue;
+                }
 
-        DummyMethodModel sourceMethod = _source.GetMethod(sourceType, methodIndex);
-        TypeDefinition type = RequireType(sourceType.Index);
-        var method = new MethodDefinition(
-            sourceMethod.Name,
-            sourceMethod.Attributes,
-            type.Module.ImportReference(_typeSystem.Void)
-        );
-        type.Methods.Add(method);
-
-        foreach (DummyGenericParameterModel sourceParameter in sourceMethod.GenericParameters) {
-            if (_genericParameters.ContainsKey(sourceParameter.MetadataIndex)) {
-                throw new InvalidDataException(
-                    $"Generic parameter metadata index {sourceParameter.MetadataIndex} is owned more than once."
+                int placeholdersBefore = Report.PlaceholderTypeCount;
+                TypeReference eventType = ResolveTypeReference(
+                    sourceEvent.EventType,
+                    type,
+                    sourceType,
+                    "event",
+                    sourceEvent.Index
                 );
+                MethodDefinition? addMethod = sourceEvent.AddMethodIndex.HasValue
+                    ? GetAccessor(sourceType, sourceEvent.AddMethodIndex.Value)
+                    : null;
+                MethodDefinition? removeMethod = sourceEvent.RemoveMethodIndex.HasValue
+                    ? GetAccessor(sourceType, sourceEvent.RemoveMethodIndex.Value)
+                    : null;
+                MethodDefinition? invokeMethod = sourceEvent.RaiseMethodIndex.HasValue
+                    ? GetAccessor(sourceType, sourceEvent.RaiseMethodIndex.Value)
+                    : null;
+                var eventDefinition = new EventDefinition(sourceEvent.Name, EventAttributes.None, eventType) {
+                    AddMethod = addMethod,
+                    RemoveMethod = removeMethod,
+                    InvokeMethod = invokeMethod
+                };
+                type.Events.Add(eventDefinition);
+                _eventDefinitions.Add(sourceEvent.Index, eventDefinition);
+                Report.EventCount++;
+                if (addMethod?.IsPublic == true || removeMethod?.IsPublic == true || invokeMethod?.IsPublic == true) {
+                    Report.PublicEventCount++;
+                    if (Report.PlaceholderTypeCount != placeholdersBefore)
+                        Report.PublicMemberPlaceholderCount++;
+                }
             }
-            var parameter = new GenericParameter(sourceParameter.Name, method);
-            method.GenericParameters.Add(parameter);
-            _genericParameters.Add(sourceParameter.MetadataIndex, parameter);
         }
+    }
 
-        method.ReturnType = ResolveTypeReference(
-            sourceMethod.ReturnType,
-            method,
-            sourceType,
-            "method return",
-            sourceMethod.Index
-        );
-        foreach (DummyParameterModel sourceParameter in sourceMethod.Parameters) {
-            TypeReference parameterType = ResolveTypeReference(
-                sourceParameter.ParameterType,
-                method,
-                sourceType,
-                "parameter",
-                sourceParameter.Index
+    private MethodDefinition GetAccessor(DummyTypeModel sourceType, int methodIndex) {
+        if (!_methodDefinitions.TryGetValue(methodIndex, out MethodDefinition? method)) {
+            throw new InvalidDataException(
+                $"Accessor method {methodIndex} for type definition {sourceType.Index} was not prepared."
             );
-            method.Parameters.Add(new ParameterDefinition(
-                sourceParameter.Name,
-                sourceParameter.Attributes,
-                parameterType
-            ));
         }
-
-        _methodDefinitions.Add(methodIndex, method);
-        Report.AccessorCount++;
+        if (_accessorMethodIndices.Add(methodIndex))
+            Report.AccessorCount++;
         return method;
     }
 
@@ -380,7 +554,9 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
     }
 
     private static void EnsureMinimalBody(MethodDefinition? method) {
-        if (method == null || !method.HasBody || method.Body.Instructions.Count != 0)
+        if (method == null || method.IsAbstract || method.IsPInvokeImpl || method.DeclaringType.IsInterface ||
+            method.ImplAttributes.HasFlag(MethodImplAttributes.Runtime) || !method.HasBody ||
+            method.Body.Instructions.Count != 0)
             return;
 
         ILProcessor il = method.Body.GetILProcessor();
@@ -443,10 +619,10 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
                     return parameter;
                 return Placeholder(signature,
                     $"Generic parameter {signature.GenericParameterIndex} has no generated owner.",
-                    sourceType, memberKind, memberIndex, module);
+                    sourceType, memberKind, memberIndex, owner, module);
             default:
                 return Placeholder(signature, signature.Reason ?? "Unsupported type signature.",
-                    sourceType, memberKind, memberIndex, module);
+                    sourceType, memberKind, memberIndex, owner, module);
         }
     }
 
@@ -459,7 +635,7 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
     ) {
         if (signature.ElementType == null)
             return Placeholder(signature, "Composite type has no element type.",
-                sourceType, memberKind, memberIndex, owner.Module);
+                sourceType, memberKind, memberIndex, owner, owner.Module);
         return ResolveTypeReference(signature.ElementType, owner, sourceType, memberKind, memberIndex);
     }
 
@@ -469,9 +645,12 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
         DummyTypeModel sourceType,
         string memberKind,
         int memberIndex,
+        MemberReference? owner,
         ModuleDefinition module
     ) {
         Report.PlaceholderTypeCount++;
+        if (owner is MethodDefinition { IsPublic: true })
+            Report.PublicMemberPlaceholderCount++;
         AddDiagnostic("Warning", "TYPE_PLACEHOLDER",
             $"Using System.Object for IL2CPP type 0x{signature.TypeCode:X2}: {reason}",
             sourceType, memberKind, memberIndex);
@@ -530,6 +709,28 @@ internal sealed class MetadataDummyAssemblyGenerator : IDisposable {
             new CustomAttributeArgument(module.ImportReference(_attributeStringType), $"0x{offset:X}")
         ));
         field.CustomAttributes.Add(attribute);
+    }
+
+    private void AddAddressAttribute(
+        ModuleDefinition module,
+        MethodDefinition method,
+        DummyMethodAddressModel address
+    ) {
+        var attribute = new CustomAttribute(module.ImportReference(_addressAttributeConstructor));
+        TypeReference stringType = module.ImportReference(_attributeStringType);
+        attribute.Fields.Add(new CustomAttributeNamedArgument(
+            "RVA",
+            new CustomAttributeArgument(stringType, $"0x{address.Rva:X}")
+        ));
+        attribute.Fields.Add(new CustomAttributeNamedArgument(
+            "Offset",
+            new CustomAttributeArgument(stringType, $"0x{address.FileOffset:X}")
+        ));
+        attribute.Fields.Add(new CustomAttributeNamedArgument(
+            "VA",
+            new CustomAttributeArgument(stringType, $"0x{address.Va:X}")
+        ));
+        method.CustomAttributes.Add(attribute);
     }
 
     private TypeDefinition RequireType(int index) {

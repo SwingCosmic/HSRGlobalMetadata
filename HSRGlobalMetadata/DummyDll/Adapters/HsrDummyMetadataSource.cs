@@ -70,11 +70,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         if (source.GenericContainerIndex >= 0) {
             var container = new Il2CppGenericContainerDefinition(source.GenericContainerIndex);
             for (int ordinal = 0; ordinal < container.Parameters.Count; ordinal++) {
-                Il2CppGenericParameterDefinition parameter = container.Parameters[ordinal];
-                genericParameters.Add(new DummyGenericParameterModel(
-                    checked(container.GenericParameterStart + ordinal),
-                    parameter.Name
-                ));
+                genericParameters.Add(DescribeGenericParameter(container, ordinal));
             }
         }
 
@@ -95,7 +91,9 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
             source.MethodStart,
             source.MethodCount,
             source.PropertyStart,
-            source.PropertyCount
+            source.PropertyCount,
+            source.EventStart,
+            source.EventCount
         );
         _types.Add(typeDefinitionIndex, model);
         return model;
@@ -140,10 +138,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         if (source.GenericContainerIndex >= 0) {
             var container = new Il2CppGenericContainerDefinition(source.GenericContainerIndex);
             for (int ordinal = 0; ordinal < container.Parameters.Count; ordinal++) {
-                genericParameters.Add(new DummyGenericParameterModel(
-                    checked(container.GenericParameterStart + ordinal),
-                    container.Parameters[ordinal].Name
-                ));
+                genericParameters.Add(DescribeGenericParameter(container, ordinal));
             }
         }
 
@@ -159,13 +154,16 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
             ));
         }
 
+        DummyMethodAddressModel? address = DescribeMethodAddress(source.MethodPointer, out string? addressError);
         var model = new DummyMethodModel(
             absoluteMethodIndex,
             source.Name,
             (Mono.Cecil.MethodAttributes)source.Flags,
             DescribeType(source.ReturnType),
             genericParameters,
-            parameters
+            parameters,
+            address,
+            addressError
         );
         _methods.Add(absoluteMethodIndex, model);
         return model;
@@ -183,6 +181,75 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         return new DummyPropertyModel(propertyIndex, source.Name, getter, setter);
     }
 
+    public DummyEventModel GetEvent(DummyTypeModel declaringType, int eventOrdinal) {
+        ArgumentNullException.ThrowIfNull(declaringType);
+        ValidateIndex(eventOrdinal, declaringType.EventCount,
+            $"event ordinal for type definition {declaringType.Index}");
+
+        int eventIndex = checked(declaringType.EventStart + eventOrdinal);
+        var source = new Il2CppEventDefinition(eventIndex);
+        ValidateIndex(source.TypeIndex, MetadataCache.Types.Length, $"event {eventIndex} type");
+        return new DummyEventModel(
+            eventIndex,
+            source.Name,
+            DescribeType(MetadataCache.Types[source.TypeIndex]),
+            ResolveAccessorIndex(source.AddMethodIndex, declaringType, eventIndex, "event", "add"),
+            ResolveAccessorIndex(source.RemoveMethodIndex, declaringType, eventIndex, "event", "remove"),
+            ResolveAccessorIndex(source.RaiseMethodIndex, declaringType, eventIndex, "event", "raise")
+        );
+    }
+
+    private DummyGenericParameterModel DescribeGenericParameter(
+        Il2CppGenericContainerDefinition container,
+        int ordinal
+    ) {
+        Il2CppGenericParameterDefinition parameter = container.Parameters[ordinal];
+        var constraints = new List<DummyTypeSignature>(parameter.ConstraintsCount);
+        for (int constraintOrdinal = 0; constraintOrdinal < parameter.ConstraintsCount; constraintOrdinal++) {
+            int constraintIndex = checked(parameter.ConstraintsStart + constraintOrdinal);
+            var constraint = new Il2CppGenericParameterConstraintDefinition(constraintIndex);
+            if (constraint.ConstraintIndex < 0)
+                continue;
+            ValidateIndex(constraint.ConstraintIndex, MetadataCache.Types.Length,
+                $"generic parameter {container.GenericParameterStart + ordinal} constraint");
+            constraints.Add(DescribeType(MetadataCache.Types[constraint.ConstraintIndex]));
+        }
+        return new DummyGenericParameterModel(
+            checked(container.GenericParameterStart + ordinal),
+            parameter.Name,
+            GenericParameterAttributes.NonVariant,
+            constraints
+        );
+    }
+
+    private static DummyMethodAddressModel? DescribeMethodAddress(long methodPointer, out string? error) {
+        error = null;
+        if (methodPointer == 0)
+            return null;
+        if (methodPointer < 0) {
+            error = $"Method pointer 0x{unchecked((ulong)methodPointer):X} exceeds Int64 virtual-address range.";
+            return null;
+        }
+
+        ulong va = (ulong)methodPointer;
+        ulong imageBase = Configuration.RuntimeConfiguration.Current.ImageBase;
+        if (va < imageBase) {
+            error = $"Method pointer 0x{va:X} is below ImageBase 0x{imageBase:X}.";
+            return null;
+        }
+        ulong rva = va - imageBase;
+        if (rva > uint.MaxValue) {
+            error = $"Method RVA 0x{rva:X} exceeds the supported PE range.";
+            return null;
+        }
+        ulong fileOffset = PEHelper.RvaToOffset((uint)rva);
+        if (fileOffset == ulong.MaxValue) {
+            error = $"Method RVA 0x{rva:X} is outside all PE sections.";
+            return null;
+        }
+        return new DummyMethodAddressModel(va, rva, fileOffset);
+    }
+
     private DummyTypeSignature DescribeType(Il2CppType type) =>
         DescribeType(type, new HashSet<int>(), 0);
 
@@ -193,10 +260,11 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
             return DummyTypeSignature.Unsupported(type.Type, $"Recursive type signature at GameAssembly offset 0x{type.Offset:X}.");
 
         try {
-            if (type.Type is >= 0x01 and <= 0x0E or 0x16 or 0x18 or 0x19 or 0x1C)
-                return DummyTypeSignature.Primitive(type.Type);
-
-            return type.Type switch {
+            DummyTypeSignature signature;
+            if (type.Type is >= 0x01 and <= 0x0E or 0x16 or 0x18 or 0x19 or 0x1C) {
+                signature = DummyTypeSignature.Primitive(type.Type);
+            }
+            else signature = type.Type switch {
                 0x0F => DummyTypeSignature.Pointer(DescribeIndirect(type.Data, activeOffsets, depth)),
                 0x10 => DummyTypeSignature.ByReference(DescribeIndirect(type.Data, activeOffsets, depth)),
                 0x11 or 0x12 => DescribeDefinition(type),
@@ -208,6 +276,9 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
                 _ => DummyTypeSignature.Unsupported(type.Type,
                     $"Unsupported IL2CPP type code 0x{type.Type:X2}, data 0x{type.Data:X}.")
             };
+            return type.IsByReference && signature.Kind != DummyTypeSignatureKind.ByReference
+                ? DummyTypeSignature.ByReference(signature)
+                : signature;
         }
         catch (Exception ex) when (ex is ArgumentException or ArithmeticException or InvalidDataException) {
             return DummyTypeSignature.Unsupported(type.Type,
@@ -319,12 +390,20 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         DummyTypeModel declaringType,
         int propertyIndex,
         string accessorKind
+    ) => ResolveAccessorIndex(relativeIndex, declaringType, propertyIndex, "property", accessorKind);
+
+    private static int? ResolveAccessorIndex(
+        int relativeIndex,
+        DummyTypeModel declaringType,
+        int memberIndex,
+        string memberKind,
+        string accessorKind
     ) {
         if (relativeIndex < 0)
             return null;
         if (relativeIndex >= declaringType.MethodCount) {
             throw new InvalidDataException(
-                $"Property {propertyIndex} {accessorKind} index {relativeIndex} is outside type definition " +
+                $"{memberKind} {memberIndex} {accessorKind} index {relativeIndex} is outside type definition " +
                 $"{declaringType.Index} method range [0, {declaringType.MethodCount})."
             );
         }

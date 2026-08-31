@@ -31,6 +31,10 @@ public class Il2CppType {
     public ulong Data;
     public ushort Attrs;
     public byte Type;
+    public byte PackedFlags;
+    public byte NumModifiers;
+    public bool IsByReference;
+    public bool IsPinned;
     public int Offset;
 
     public static ulong ImageBase => Configuration.RuntimeConfiguration.Current.ImageBase;
@@ -43,6 +47,23 @@ public class Il2CppType {
         Data = BitConverter.ToUInt64(bytes, offset);
         Attrs = BitConverter.ToUInt16(bytes, offset + 8);
         Type = bytes[offset + 10];
+        PackedFlags = bytes[offset + 11];
+        (NumModifiers, IsByReference, IsPinned) = DecodePackedFlags(
+            PackedFlags,
+            Configuration.RuntimeConfiguration.Current.Layout.Il2CppTypeBits
+        );
+    }
+
+    public static (byte NumModifiers, bool IsByReference, bool IsPinned) DecodePackedFlags(
+        byte packedFlags,
+        Configuration.Il2CppTypeBitLayout? layout = null
+    ) {
+        layout ??= Configuration.MetadataLayout.OspProdWin450.Il2CppTypeBits;
+        return (
+            (byte)(packedFlags & layout.ModifiersMask),
+            (packedFlags & layout.ByReferenceMask) != 0,
+            (packedFlags & layout.PinnedMask) != 0
+        );
     }
 
     public static Il2CppType FromIndex(int index) {

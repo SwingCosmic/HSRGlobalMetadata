@@ -20,6 +20,17 @@ public sealed class DummyDllGenerationReport {
     public int SerializableFieldPlaceholderCount { get; internal set; }
     public int PropertyCount { get; internal set; }
     public int AccessorCount { get; internal set; }
+    public int MethodCount { get; internal set; }
+    public int EventCount { get; internal set; }
+    public int AddressedMethodCount { get; internal set; }
+    public int GenericConstraintCount { get; internal set; }
+    public int PublicFieldCount { get; internal set; }
+    public int PublicPropertyCount { get; internal set; }
+    public int PublicMethodCount { get; internal set; }
+    public int PublicEventCount { get; internal set; }
+    public int PublicMemberPlaceholderCount { get; internal set; }
+    public int PreparedPublicMemberCount =>
+        PublicFieldCount + PublicPropertyCount + PublicMethodCount + PublicEventCount;
     public int SyntheticBackingFieldCount { get; internal set; }
     public int PlaceholderTypeCount { get; internal set; }
     public IReadOnlyList<DummyDllDiagnostic> Diagnostics => _diagnostics;

@@ -26,11 +26,37 @@ dotnet run -c Release -- <path_to_game_folder> --dummy-dll
 ```
 
 The default output directory is `<path_to_game_folder>/dump`. DummyDll assemblies are written to its `DummyDll` child directory.
-The generator currently restores type/nesting/inheritance/interface relationships, type generic parameters,
-fields, literal constants, field offsets, arrays, closed generic field graphs, and properties with their
-minimal accessor bodies. A `generation-report.json` file is emitted beside the assemblies with coverage and
-fallback diagnostics. Delegate-specific method skeletons and the remaining ordinary methods/events are planned
-for phase three.
+
+### DummyDll support
+
+DummyDll generation restores the metadata structure needed by common .NET inspection tools:
+
+- types, nesting, inheritance, interfaces, generic parameters, and generic constraints;
+- structured generic, array, pointer, and by-reference type signatures;
+- public and non-public fields, properties, methods, parameters, and events;
+- literal values, field offsets, property/event accessors, and delegate signatures; and
+- method VA, RVA, and PE file offsets when a valid method pointer is available.
+
+The generated assemblies can be loaded with Mono.Cecil and browsed with tools such as dnSpy or ILSpy. DummyDll
+support is currently verified for the built-in `OSPRODWin4.5.0` profile. Other game versions may require a new
+profile or updated metadata layout settings.
+
+DummyDll files contain metadata stubs, not reconstructed game code. Ordinary managed methods return default
+values, and metadata that is not available from the current parser is not fabricated.
+
+### Why use DummyDll instead of a large `dump.cs`?
+
+A `dump.cs` is useful as a single searchable text file, but it becomes cumbersome when it grows beyond 100 MB.
+DummyDll output provides several practical advantages:
+
+- open only the assembly you need instead of scanning or parsing one very large text file;
+- navigate types and cross-assembly references directly in dnSpy or ILSpy;
+- consume a structured type/member graph through Mono.Cecil without writing a custom C# text parser;
+- preserve generics, nesting, arrays, pointers, and ref/out signatures as metadata nodes; and
+- read field offsets and method addresses directly from custom attributes.
+
+This makes DummyDll output better suited to IDE-style browsing, reflection-like tooling, and automated metadata
+processing, while `dump.cs` remains available for plain-text searches and quick manual inspection.
 
 Available options:
 

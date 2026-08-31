@@ -1,8 +1,25 @@
 # DummyDll 生成方案（Il2CppDumper 逻辑迁移）
 
-- 日期：2026-08-28
+- 初始设计日期：2026-08-28
+- 当前状态更新：2026-08-31
 - 已锁定：在本仓库现有 HSR 解析层上，**复用 Il2CppDumper 的 DummyDll 生成逻辑**（Mono.Cecil），不重建标准 `global-metadata.dat`，也不调用现成 `Il2CppDumper.exe`。若实际需要复用的 Il2CppDumper 代码较多，则将已修改、可作为 DLL 调用的 Il2CppDumper fork 以 Git submodule 嵌入本仓库，而不是继续复制大量源码。
-- 本文是编码前的实施方案，不含实现。
+- 本文保留最初的迁移设计，并补充当前实现结果。具体分阶段验收数据见[实施计划](dummydll-il2cppdumper-implementation-plan.md)。
+
+## 0. 当前实现结论
+
+依赖闭包评估后采用了本仓库内的裁剪适配/生成层，没有引入 Il2CppDumper submodule。`Il2CppDummyDll.dll` 固定使用提交 `7a1bb2ec74adaad8606cb36bd86d551f2cd9f78a` 的模板；来源和哈希记录在[第三方声明](third-party-notices.md)中。
+
+截至 2026-08-31，三个阶段中的“全部成员可生成”主链已经落地：
+
+- 全部 80,960 个类型以及 nested、继承、接口、泛型参数和 2,437 个泛型约束均进入 Cecil 图。
+- 全部 555,717 个 metadata 字段、91,745 个属性、733,062 个方法和 753 个事件均写入输出。
+- 908,806 个成员自身 flags 为 public 的成员全部完成准备，类型占位为 0。
+- 非 public metadata 成员同样全部写入：154,542 个字段、11,633 个属性、306,222 个方法和 74 个事件。
+- 自动属性额外产生 22,506 个 private synthetic backing field；它们不计入 metadata 字段覆盖率。
+- 700,927 个有效方法地址写入 `AddressAttribute`，包含 VA、RVA 和文件 Offset。
+- 143 个输出程序集全部写盘并逐个由 Mono.Cecil 重新加载；结构化诊断只有 22,506 条 synthetic backing field 的 Info，无 warning/error。
+
+当前尚未完成的是 136 MB `dump.cs` 的有界内存外部归并全量 diff、最终 100% 无未解释差异门禁和 parameter default value 等非成员存在性细节。普通方法体只保证 DummyDll 所需的合法默认返回，不代表原始游戏实现。
 
 ---
 
@@ -101,7 +118,7 @@ DummyDll/*.dll（Il2CppDummyDll.dll + 各 image）
 | `il2Cpp.GetFieldOffsetFromIndex` | `Il2CppFieldDefinition.Offset` |
 | `il2Cpp.GetMethodPointer` / `GetRVA` | `MethodPointer`；RVA = VA − `0x180000000` |
 | `executor.TryGetDefaultValue` | `Il2CppFieldDefinition.GetFieldStaticValue` |
-| `il2CppType.byref` | **未解析**，见第 4 节 |
+| `il2CppType.byref` | 已按 `OSPRODWin4.5.0` 版本配置解析第 11 字节，见第 4 节 |
 | `methodDef.token` / `iflags` / `slot`，`propertyDef.attrs` | 无。token 可按 RID 合成或第一阶段不写 `TokenAttribute`；iflags/attrs 用 0 |
 | `CreateCustomAttribute`（v21+ 整段） | **第一阶段不迁**。`[Serializable]` 等已在 `TypeAttributes` 里 |
 
@@ -109,24 +126,29 @@ DummyDll/*.dll（Il2CppDummyDll.dll + 各 image）
 
 ---
 
-## 4. 编码前要补的解析缺口
+## 4. 解析缺口及当前处理结果
 
 只补 DummyDll 真正读到的字段，不去逆向剩余 header。
 
-1. **`Il2CppType` 的 `bits`**  
-   当前只读了 offset+0 `data`、+8 `attrs`、+10 `type`。Il2CppDumper 把后 4 字节当 `bits`，再拆 `byref` / `pinned` / `num_mods`。`GetTypeReferenceWithByRef` 依赖 `byref == 1`，不补则 `ref`/`out` 会丢。样本上先读第 11 字节，对照 Il2CppDumper `Il2CppType.Init`（v27.2 前后两种拆法）看哪种和 HSR 一致。
+1. **`Il2CppType` 的 `bits`：已完成**
 
-2. **`GetTypeReference` 图**  
-   把 `ComputeName` 的 type 枚举改成返回 `TypeReference`。这是迁移工作量的主体，不是新的逆向。
+   当前读取 offset+0 `data`、+8 `attrs`、+10 `type` 和第 11 字节 packed flags。样本分布为 bit5=0、bit6=95,357、bit7=0；结合实际 ref/out 参数，`OSPRODWin4.5.0` 配置采用 6-bit `num_mods`、bit6 `byref`、bit7 `pinned` 布局。掩码保存在版本配置中，不由生成器硬编码。
 
-3. **`Il2CppDummyDll.dll`**  
-   从 `E:\dev\git\Il2CppDumper\Il2CppDumper\Libraries\Il2CppDummyDll.dll` 拷入并嵌入。Generator 启动时 `AssemblyDefinition.ReadAssembly` 读它，取出 `AddressAttribute`、`FieldOffsetAttribute` 等构造函数。
+2. **`GetTypeReference` 图：已完成当前样本范围**
 
-4. **Mono.Cecil 0.11.4**  
-   写入本仓库 `HSRGlobalMetadata.csproj` 的 PackageReference（与 Il2CppDumper 同版本）。不要引用 `E:\DevTools` 里的散装 DLL。
+   生成层不使用 `ComputeName` 拼接成员类型，而是生成 Cecil `TypeReference`、`GenericInstanceType`、`ArrayType`、`PointerType`、`ByReferenceType` 和 owner 正确的 `GenericParameter`。当前样本全局类型占位为 0。
 
-5. **启动参数与版本化常量**  
-   增加统一的解析选项对象，由命令行入口构造并传入 metadata、startup-metadata 和 PE 解析流程。至少支持显式指定游戏/metadata 版本；经验证可能随版本变化的 XOR key、LCG 参数、文件 magic、ImageBase、结构步长或表定位常量也通过该对象覆盖。所有选项均为可选，缺省时使用当前已验证样本对应的内置默认值。
+3. **`Il2CppDummyDll.dll`：已完成**
+
+   模板已嵌入项目资源。Generator 启动时读取并校验 `AddressAttribute`、`FieldOffsetAttribute`、`MetadataOffsetAttribute` 和 `TokenAttribute` 等预期类型，不依赖开发机绝对路径。
+
+4. **Mono.Cecil 0.11.4：已完成**
+
+   已通过 `HSRGlobalMetadata.csproj` 的 PackageReference 引入，与目标 Il2CppDumper 版本一致。
+
+5. **启动参数与版本化常量：已完成基础链路**
+
+   统一配置对象由命令行入口构造并传入 metadata、startup-metadata、PE 解析和 DummyDll 生成流程。支持版本、metadata magic、ImageBase、输出选择和严格诊断等选项；缺省使用当前样本验证过的 `OSPRODWin4.5.0` 配置。
 
    参数设计遵循以下约束：
 
@@ -145,16 +167,16 @@ DummyDll/*.dll（Il2CppDummyDll.dll + 各 image）
 | 材料 | 状态 | 用途 |
 |---|---|---|
 | 样本游戏版本号 | **缺，但不阻塞默认路径** | 用于确认与默认的 `OSPRODWin4.5.0` 配置一致；也可在启动时显式指定版本和常量覆盖项 |
-| Mono.Cecil 0.11.4 | 编码时加 NuGet | 写 DLL |
-| 本工具在该样本上的 `dump.cs` | 可选，跑现有程序即可 | 与 DummyDll 抽查对照 |
-| 若干 `.asset` / bundle（含 MonoBehaviour） | 可选，阶段 2 | 验证 AssetStudio 能否认 DummyDll |
+| Mono.Cecil 0.11.4 | 已通过 NuGet 引入 | 写入及重新加载 DLL |
+| 本工具在该样本上的 `dump.cs` | 已生成，136,224,400 字节 | 当前用于抽查；后续用于有界内存全量 diff |
+| 若干 `.asset` / bundle（含 MonoBehaviour） | 可选，后续兼容性验证 | 验证 AssetStudio 能否识别 DummyDll |
 | 内存：样本 GameAssembly 536MB + metadata 100MB | 机器需能一次载入 | 现有解析器是整文件读入 |
 
 不需要：UnityCN `game.dat`、标准 `0xFAB11BAF` metadata、运行时注入 dump。Il2CppDumper fork 已有的 DLL 调用入口可以继续维护；若采用 submodule，只做生成层复用所需的最小修改。
 
 ---
 
-## 6. 实施顺序（尚未开始编码）
+## 6. 实施顺序（已执行）
 
 1. 抽出统一解析选项；为版本号及可变 magic number 增加可选启动参数，并保留当前常量作为默认配置。
 2. 评估 Il2CppDumper 生成层的实际依赖闭包：依赖较小时迁入少量文件；依赖明显扩散时，将已修改的 fork 以固定 commit 的 submodule 放入 `extern/Il2CppDumper`，并通过 DLL 调用入口对接。
@@ -165,6 +187,8 @@ DummyDll/*.dll（Il2CppDummyDll.dll + 各 image）
 7. 分别用默认配置和显式参数对 `sample/HSR` 出 `DummyDll/`，确认结果一致；再用 dnSpy 打开 `mscorlib` 与游戏主程序集，对照 `dump.cs`。
 
 验收：dnSpy 能按程序集浏览类型、字段偏移、方法 RVA；不要求 AssetStudio 第一阶段就通过。
+
+实际执行结果采用“程序集/类型骨架 → nested → 类型泛型参数 → parent/interface → 字段 → 全部方法骨架 → 泛型约束/方法签名 → 属性 → 事件”的多遍顺序。属性访问器和事件访问器均复用同一 metadata method 节点；独立 Cecil 遍历确认无重复 fallback 成员、无错误 owner、无意外缺失方法体。
 
 ---
 

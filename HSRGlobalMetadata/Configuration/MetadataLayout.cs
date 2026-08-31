@@ -1,5 +1,11 @@
 namespace HSRGlobalMetadata.Configuration;
 
+public sealed record Il2CppTypeBitLayout(
+    byte ModifiersMask,
+    byte ByReferenceMask,
+    byte PinnedMask
+);
+
 public sealed record MetadataLayout(
     int MetadataHeaderSize,
     int TypeDefinitionSize,
@@ -17,7 +23,8 @@ public sealed record MetadataLayout(
     int GenericInstDefinitionSize,
     int Il2CppTypeDefinitionSize,
     int IndexSize,
-    int PointerSize
+    int PointerSize,
+    Il2CppTypeBitLayout Il2CppTypeBits
 ) {
     public static MetadataLayout OspProdWin450 { get; } = new(
         MetadataHeaderSize: 0x208,
@@ -36,6 +43,11 @@ public sealed record MetadataLayout(
         GenericInstDefinitionSize: 16,
         Il2CppTypeDefinitionSize: 16,
         IndexSize: 4,
-        PointerSize: 8
+        PointerSize: 8,
+        Il2CppTypeBits: new Il2CppTypeBitLayout(
+            ModifiersMask: 0x3F,
+            ByReferenceMask: 0x40,
+            PinnedMask: 0x80
+        )
     );
 }

@@ -45,5 +45,14 @@ public static class RuntimeConfiguration {
         };
         if (sizes.Any(size => size <= 0))
             throw new ArgumentOutOfRangeException(nameof(profile), "All metadata layout sizes must be positive.");
+
+        Il2CppTypeBitLayout typeBits = layout.Il2CppTypeBits;
+        if (typeBits.ByReferenceMask == 0 || typeBits.PinnedMask == 0 ||
+            (typeBits.ModifiersMask & typeBits.ByReferenceMask) != 0 ||
+            (typeBits.ModifiersMask & typeBits.PinnedMask) != 0 ||
+            (typeBits.ByReferenceMask & typeBits.PinnedMask) != 0) {
+            throw new ArgumentOutOfRangeException(nameof(profile),
+                "Il2CppType bit masks must be non-overlapping and include byref and pinned bits.");
+        }
     }
 }

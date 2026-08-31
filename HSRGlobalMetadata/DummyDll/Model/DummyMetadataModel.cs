@@ -60,7 +60,14 @@ internal sealed record DummyTypeSignature(
         new(DummyTypeSignatureKind.Unsupported, typeCode, Reason: reason);
 }
 
-internal sealed record DummyGenericParameterModel(int MetadataIndex, string Name);
+internal sealed record DummyGenericParameterModel(
+    int MetadataIndex,
+    string Name,
+    GenericParameterAttributes Attributes = GenericParameterAttributes.NonVariant,
+    IReadOnlyList<DummyTypeSignature>? Constraints = null
+);
+
+internal sealed record DummyMethodAddressModel(ulong Va, ulong Rva, ulong FileOffset);
 
 internal sealed record DummyImageModel(int Index, string Name, int TypeStart, int TypeCount);
 
@@ -80,7 +87,9 @@ internal sealed record DummyTypeModel(
     int MethodStart,
     int MethodCount,
     int PropertyStart,
-    int PropertyCount
+    int PropertyCount,
+    int EventStart = 0,
+    int EventCount = 0
 );
 
 internal sealed record DummyFieldModel(
@@ -106,7 +115,9 @@ internal sealed record DummyMethodModel(
     MethodAttributes Attributes,
     DummyTypeSignature ReturnType,
     IReadOnlyList<DummyGenericParameterModel> GenericParameters,
-    IReadOnlyList<DummyParameterModel> Parameters
+    IReadOnlyList<DummyParameterModel> Parameters,
+    DummyMethodAddressModel? Address = null,
+    string? AddressError = null
 );
 
 internal sealed record DummyPropertyModel(
@@ -114,6 +125,15 @@ internal sealed record DummyPropertyModel(
     string Name,
     int? GetterMethodIndex,
     int? SetterMethodIndex
+);
+
+internal sealed record DummyEventModel(
+    int Index,
+    string Name,
+    DummyTypeSignature EventType,
+    int? AddMethodIndex,
+    int? RemoveMethodIndex,
+    int? RaiseMethodIndex
 );
 
 internal interface IDummyMetadataSource {
@@ -124,4 +144,5 @@ internal interface IDummyMetadataSource {
     DummyFieldModel GetField(DummyTypeModel declaringType, int fieldOrdinal);
     DummyMethodModel GetMethod(DummyTypeModel declaringType, int absoluteMethodIndex);
     DummyPropertyModel GetProperty(DummyTypeModel declaringType, int propertyOrdinal);
+    DummyEventModel GetEvent(DummyTypeModel declaringType, int eventOrdinal);
 }

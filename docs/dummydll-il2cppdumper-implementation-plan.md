@@ -55,6 +55,45 @@ CLR/Unity 外部依赖优化仍保持可选，第一阶段未实现，不影响�
 - `RPG.GameCore.JsonConfigListType` 等枚举 literal 值正确写入。
 - 第二阶段单元测试与既有回归测试共 16/16 通过。
 
+### 第三阶段：成员准备目标已完成（2026-08-31；public 为本轮门禁）
+
+本轮按“暂不要求最终覆盖门禁 100%，但所有 public 成员必须可准备生成”的范围完成：
+
+- `Il2CppType` 第 11 字节按版本配置解析 `num_mods`、`byref` 和 `pinned`，并将 byref 应用于结构化 Cecil 类型图。
+- 为全部 metadata method 预先创建稳定 `MethodDefinition`，再补充返回类型、参数、方法泛型参数、泛型约束和最小合法方法体；属性访问器复用相同节点。
+- 委托方法改用 runtime/managed 语义，不生成普通 IL body。
+- 生成全部事件，并关联 add/remove/raise 方法。
+- 对有效 method pointer 生成包含 VA、RVA 和文件 Offset 的 `AddressAttribute`；无效地址进入结构化诊断，不影响方法节点准备。
+- `generation-report.json` 增加方法、事件、地址、泛型约束及 public 字段/属性/方法/事件统计，并单独统计 public 成员占位。
+
+真实样本验证结果：
+
+- 143 个程序集全部写盘并逐个由 Mono.Cecil 重新加载。
+- 样本 `Il2CppType` 高位分布为 bit5=0、bit6=95,357、bit7=0，结合实际 byref 参数确认该 HSR 版本沿用 6-bit `num_mods` + bit6 `byref` + bit7 `pinned` 布局；掩码已放入 `OSPRODWin4.5.0` 版本配置。
+- 生成 733,062 个方法、753 个事件、700,927 个 `AddressAttribute` 和 2,437 个泛型约束。
+- 准备 908,806 个 public 成员：401,175 个字段、80,112 个属性、426,840 个方法和 679 个事件。
+- public 成员占位为 0，全部类型占位为 0；22,506 条诊断仍全部为 synthetic backing field 的信息记录，无 warning/error。
+- 独立从输出 DLL 重新遍历得到完全相同的 public 成员、地址和约束计数，并确认 40,502 个 byref 参数形成 `ByReferenceType`。
+- 单元测试与既有回归测试共 21/21 通过。
+
+非 public 成员实际写盘核对：
+
+| 可见性 | metadata 字段 | 属性 | 方法 | 事件 |
+|---|---:|---:|---:|---:|
+| private | 145,925 | 9,536 | 261,055 | 29 |
+| internal | 4,737 | 1,563 | 30,142 | 25 |
+| protected | 3,847 | 531 | 14,875 | 20 |
+| protected internal | 33 | 3 | 150 | 0 |
+| 非 public 合计 | 154,542 | 11,633 | 306,222 | 74 |
+
+- 上表按成员自身 metadata/Cecil flags 统计，不把声明类型的可见性折算进成员的有效外部可见性。
+- DLL 中实际有 177,048 个非 public 字段节点：154,542 个 metadata 字段加 22,506 个 private synthetic backing field。synthetic 字段单独报告，不用于提高 metadata 字段覆盖率。
+- 306,222 个非 public 方法全部有合法形态：304,323 个具有最小 IL body，437 个 abstract、1,457 个 P/Invoke 和 5 个 delegate runtime 方法按语义不含普通 body，意外无 body 为 0。
+- 非 public 方法中有 297,699 个 `AddressAttribute`、12,652 个 byref 参数；非 public owner 下写入 663 个泛型约束。
+- 无访问器属性和事件均为 0，访问器 owner 错误为 0，`__invalid_*` fallback 成员为 0。
+
+本轮不把第三阶段标记为最终 100% 完成。大型 `dump.cs` 外部归并清单比较、最终无差异覆盖门禁、parameter default value 等仍按后续最终验收范围保留。
+
 ---
 
 ## 1. 总体范围和约束
@@ -64,7 +103,7 @@ CLR/Unity 外部依赖优化仍保持可选，第一阶段未实现，不影响�
 3. DummyDll 是新增产物，不替代现有 `dump.cs` 和 `stringliterals.json`。
 4. 最终保持 Mono.Cecil 的生成遍次：程序集和类型 → 嵌套/泛型/继承/接口 → 委托骨架 → 字段 → 方法 → 属性 → 事件。
 5. 第一轮实现不恢复 attribute blob，不引入 Registration 扫描、IDA/Ghidra 脚本等与 DummyDll 无直接关系的功能。
-6. Il2CppDumper fork 必须固定到经过验证的 commit。当前本地候选提交为 `7a1bb2ec74adaad8606cb36bd86d551f2cd9f78a`，正式编码前应在仓库中记录最终选定值。
+6. `Il2CppDummyDll.dll` 模板已固定到经过验证的 Il2CppDumper commit `7a1bb2ec74adaad8606cb36bd86d551f2cd9f78a`，来源、许可证和 SHA-256 记录在 `third-party-notices.md`；生成层采用本仓库内裁剪实现，未引入 submodule。
 7. 未提供游戏/metadata 版本时继续使用当前 `OSPRODWin4.5.0` 默认配置；未知版本且覆盖参数不足时必须停止，不得静默生成可能损坏的 DLL。
 
 ---
@@ -537,15 +576,15 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 
 ---
 
-## 4. 第三阶段：完整方法、复杂类型、RVA 和全量验证
+## 4. 第三阶段（成员生成主链已完成；最终全量验证待完成）：完整方法、复杂类型、RVA 和全量验证
 
 ### 4.1 阶段目标
 
 完成泛型及复合类型图，生成所有方法和事件，写入与 Il2CppDumper 同语义的地址信息，并对超过 100 MB 的 `dump.cs` 做全量、低内存覆盖验证。
 
-### 4.2 补齐 `Il2CppType.bits` 和 byref
+### 4.2 补齐 `Il2CppType.bits` 和 byref（已完成）
 
-1. 读取当前尚未解析的 `Il2CppType` bits。
+1. 已读取此前未解析的 `Il2CppType` bits，并按版本配置拆分。
 2. 对照 Il2CppDumper v27.2 前后布局验证：
 
    - `byref`
@@ -557,7 +596,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 5. 将最终布局放入版本配置，避免重新硬编码。
 6. 增加“原始 16 字节 → 解析字段”的单元测试和边界测试。
 
-### 4.3 完成 Cecil `TypeReference` 图
+### 4.3 完成 Cecil `TypeReference` 图（当前样本已完成，占位为 0）
 
 按类型标签逐项实现：
 
@@ -586,7 +625,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 10. 将第二阶段中非 CLR 集合泛型成员的 `System.Object` 占位替换为真实 `GenericInstanceType`。
 11. 最终严格模式下，样本中不得遗留因阶段能力不足产生的 `System.Object` 占位引用。
 
-### 4.4 补齐泛型类型和泛型约束
+### 4.4 补齐泛型类型和泛型约束（当前样本已完成）
 
 1. 为类型创建全部 generic parameters。
 2. 保留参数名称和 attributes。
@@ -595,7 +634,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 5. 验证开放泛型、封闭 `GenericInstanceType` 及跨程序集泛型引用。
 6. 确保 generic parameter 的缓存键包含 metadata 下标和 owner，避免同名参数冲突。
 
-### 4.5 生成全部方法
+### 4.5 生成全部方法（已完成成员准备）
 
 1. 复用第二阶段已经创建的属性访问器和委托方法节点。
 2. 为其余 metadata method 创建 `MethodDefinition`。
@@ -622,7 +661,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 7. 如果 parameter default value 可以可靠读取，则写入；否则记录诊断，不伪造默认值。
 8. 第二阶段已经生成的委托 `.ctor`、`Invoke`、`BeginInvoke` 和 `EndInvoke` 只补齐类型信息和 metadata 映射，不生成普通 IL body。
 
-### 4.6 完成属性和事件
+### 4.6 完成属性和事件（已完成成员准备）
 
 1. 使用完整方法节点重新核对属性 getter/setter。
 2. 保留第二阶段确定的自动属性语义，使用最终解析的属性类型重新校验 backing field 和访问器 IL。
@@ -636,7 +675,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 5. 验证属性和事件访问器属于正确的声明类型。
 6. 验证一个访问器不会错误关联到多个无关成员。
 
-### 4.7 添加 RVA、VA 和文件 Offset
+### 4.7 添加 RVA、VA 和文件 Offset（有效 method pointer 已完成）
 
 对具有有效 method pointer 且非 abstract 的方法添加 `AddressAttribute`：
 
@@ -805,7 +844,9 @@ E|assembly|full-type|event-name|event-type|add|remove|raise
 
 ---
 
-## 6. 第三阶段验收标准
+## 6. 第三阶段最终验收标准（尚未全部达成）
+
+当前已达到成员存在性、类型图、访问器关联、有效方法地址和 Cecil 重新加载要求；大型 `dump.cs` 有界内存全量比较及最终无未解释差异门禁仍待完成。
 
 - 所有输出程序集都可被 Mono.Cecil、dnSpy 或 ILSpy 正常打开。
 - 泛型、数组、指针、byref、VAR/MVAR 均形成正确的 Cecil 类型图。

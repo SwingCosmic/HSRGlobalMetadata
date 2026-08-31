@@ -36,6 +36,29 @@ public sealed class MetadataDummyAssemblyGeneratorTests {
         Assert.Equal(0, generator.Report.PlaceholderTypeCount);
         Assert.Equal(4, generator.Report.SerializableFieldCount);
         Assert.Equal(0, generator.Report.SerializableFieldPlaceholderCount);
+        Assert.Equal(6, generator.Report.MethodCount);
+        Assert.Equal(6, generator.Report.PublicMethodCount);
+        Assert.Equal(1, generator.Report.EventCount);
+        Assert.Equal(1, generator.Report.PublicEventCount);
+        Assert.Equal(4, generator.Report.AccessorCount);
+
+        EventDefinition changed = Assert.Single(entity.Events);
+        Assert.Equal("System.String", changed.EventType.FullName);
+        Assert.Equal("add_Changed", changed.AddMethod!.Name);
+        Assert.Equal("remove_Changed", changed.RemoveMethod!.Name);
+
+        MethodDefinition tryRead = entity.Methods.Single(method => method.Name == "TryRead");
+        Assert.IsType<ByReferenceType>(Assert.Single(tryRead.Parameters).ParameterType);
+        CustomAttribute address = Assert.Single(tryRead.CustomAttributes,
+            attribute => attribute.AttributeType.Name == "AddressAttribute");
+        Assert.Equal("0x1234", address.Fields.Single(field => field.Name == "RVA").Argument.Value);
+        Assert.Equal("0x234", address.Fields.Single(field => field.Name == "Offset").Argument.Value);
+        Assert.Equal("0x180001234", address.Fields.Single(field => field.Name == "VA").Argument.Value);
+
+        MethodDefinition echo = entity.Methods.Single(method => method.Name == "Echo");
+        GenericParameter methodParameter = Assert.Single(echo.GenericParameters);
+        Assert.Same(methodParameter, echo.ReturnType);
+        Assert.Equal("Demo.Entity", Assert.Single(methodParameter.Constraints).ConstraintType.FullName);
 
         using var stream = new MemoryStream();
         assembly.Write(stream);
@@ -56,6 +79,7 @@ public sealed class MetadataDummyAssemblyGeneratorTests {
         Assert.Equal("System.Object", entity.Fields.Single(field => field.Name == "Id").FieldType.FullName);
         Assert.Equal(1, generator.Report.PlaceholderTypeCount);
         Assert.Equal(1, generator.Report.SerializableFieldPlaceholderCount);
+        Assert.Equal(1, generator.Report.PublicMemberPlaceholderCount);
         DummyDllDiagnostic diagnostic = Assert.Single(generator.Report.Diagnostics,
             item => item.Code == "TYPE_PLACEHOLDER");
         Assert.Equal("field", diagnostic.MemberKind);
@@ -76,7 +100,7 @@ public sealed class MetadataDummyAssemblyGeneratorTests {
             _types = [
                 new DummyTypeModel(
                     0, 0, "Demo", "Entity", TypeAttributes.Public, -1, [1], null, [], [],
-                    0, 4, 0, 2, 0, 1
+                    0, 4, 0, 6, 0, 1, 0, 1
                 ),
                 new DummyTypeModel(
                     1, 0, "", "Nested", TypeAttributes.NestedPublic, 0, [], null, [], [],
@@ -122,6 +146,32 @@ public sealed class MetadataDummyAssemblyGeneratorTests {
                     DummyTypeSignature.Primitive(0x01), [],
                     [new DummyParameterModel(0, "value", ParameterAttributes.None,
                         DummyTypeSignature.Primitive(0x0E))]
+                ),
+                [2] = new DummyMethodModel(
+                    2, "add_Changed", MethodAttributes.Public | MethodAttributes.SpecialName,
+                    DummyTypeSignature.Primitive(0x01), [],
+                    [new DummyParameterModel(1, "value", ParameterAttributes.None,
+                        DummyTypeSignature.Primitive(0x0E))]
+                ),
+                [3] = new DummyMethodModel(
+                    3, "remove_Changed", MethodAttributes.Public | MethodAttributes.SpecialName,
+                    DummyTypeSignature.Primitive(0x01), [],
+                    [new DummyParameterModel(2, "value", ParameterAttributes.None,
+                        DummyTypeSignature.Primitive(0x0E))]
+                ),
+                [4] = new DummyMethodModel(
+                    4, "TryRead", MethodAttributes.Public,
+                    DummyTypeSignature.Primitive(0x02), [],
+                    [new DummyParameterModel(3, "value", ParameterAttributes.Out,
+                        DummyTypeSignature.ByReference(DummyTypeSignature.Primitive(0x0E)))],
+                    new DummyMethodAddressModel(0x180001234, 0x1234, 0x234)
+                ),
+                [5] = new DummyMethodModel(
+                    5, "Echo", MethodAttributes.Public,
+                    DummyTypeSignature.GenericParameter(0x1E, 200, method: true),
+                    [new DummyGenericParameterModel(200, "T", Constraints:
+                        [DummyTypeSignature.Definition(0x12, 0)])],
+                    []
                 )
             };
         }
@@ -136,5 +186,8 @@ public sealed class MetadataDummyAssemblyGeneratorTests {
 
         public DummyPropertyModel GetProperty(DummyTypeModel declaringType, int propertyOrdinal) =>
             new(0, "Name", 0, 1);
+
+        public DummyEventModel GetEvent(DummyTypeModel declaringType, int eventOrdinal) =>
+            new(0, "Changed", DummyTypeSignature.Primitive(0x0E), 2, 3, null);
     }
 }

@@ -67,6 +67,8 @@ public static class Program {
             MetadataTables.Initialize(gameAssemblyPath);
             Console.WriteLine("Initializing cache...");
             MetadataCache.Initialize();
+            if (options.GenerateDummyDll)
+                PrintIl2CppTypeBitDistribution();
             Console.WriteLine("Initialization complete.");
 
             if (options.GenerateDump) {
@@ -85,13 +87,17 @@ public static class Program {
                 Console.WriteLine(
                     $"Wrote {result.AssemblyPaths.Count} DummyDll assemblies with " +
                     $"{result.Report.TypeCount} types, {result.Report.FieldCount} fields and " +
-                    $"{result.Report.PropertyCount} properties to " +
+                    $"{result.Report.PropertyCount} properties, {result.Report.MethodCount} methods and " +
+                    $"{result.Report.EventCount} events to " +
                     $"{Path.Combine(outputRoot, DummyAssemblyExporter.DirectoryName)}."
                 );
                 Console.WriteLine(
                     $"Serializable public instance fields: {result.Report.SerializableFieldCount}; " +
                     $"serializable-field placeholders: {result.Report.SerializableFieldPlaceholderCount}; " +
                     $"all type placeholders: {result.Report.PlaceholderTypeCount}; " +
+                    $"prepared public members: {result.Report.PreparedPublicMemberCount}; " +
+                    $"public-member placeholders: {result.Report.PublicMemberPlaceholderCount}; " +
+                    $"addressed methods: {result.Report.AddressedMethodCount}; " +
                     $"diagnostics: {result.Report.Diagnostics.Count}; report: {result.ReportPath}"
                 );
             }
@@ -127,6 +133,17 @@ public static class Program {
     private static int Fail(string message, int exitCode = 1) {
         Console.Error.WriteLine(message);
         return exitCode;
+    }
+
+    private static void PrintIl2CppTypeBitDistribution() {
+        int bit5 = MetadataCache.Types.Count(type => (type.PackedFlags & 0x20) != 0);
+        int bit6 = MetadataCache.Types.Count(type => (type.PackedFlags & 0x40) != 0);
+        int bit7 = MetadataCache.Types.Count(type => (type.PackedFlags & 0x80) != 0);
+        Console.WriteLine(
+            $"Il2CppType high-bit distribution: bit5={bit5}, bit6={bit6}, bit7={bit7}; " +
+            $"configured byref={MetadataCache.Types.Count(type => type.IsByReference)}, " +
+            $"pinned={MetadataCache.Types.Count(type => type.IsPinned)}."
+        );
     }
 
     private static string Prompt() {
