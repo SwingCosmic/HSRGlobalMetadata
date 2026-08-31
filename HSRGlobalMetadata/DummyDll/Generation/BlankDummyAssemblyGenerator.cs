@@ -17,18 +17,26 @@ internal sealed class BlankDummyAssemblyGenerator : IDisposable {
     public IReadOnlyList<AssemblyDefinition> Assemblies => _assemblies;
     public DummyAssemblyResolver Resolver => _resolver;
 
-    public BlankDummyAssemblyGenerator(IEnumerable<Il2CppImageDefinition> images) {
-        ArgumentNullException.ThrowIfNull(images);
+    public BlankDummyAssemblyGenerator(IEnumerable<Il2CppImageDefinition> images)
+        : this(images?.Select(image => image.Name) ?? throw new ArgumentNullException(nameof(images))) {
+    }
+
+    internal BlankDummyAssemblyGenerator(IEnumerable<string> imageNames) {
+        ArgumentNullException.ThrowIfNull(imageNames);
 
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         AssemblyDefinition template = ReadTemplate();
         AddAssembly(template, names);
 
-        foreach (Il2CppImageDefinition image in images) {
-            string moduleName = NormalizeModuleName(image.Name);
+        foreach (string imageName in imageNames) {
+            string moduleName = NormalizeModuleName(imageName);
             string assemblyName = Path.GetFileNameWithoutExtension(moduleName);
             var nameDefinition = new AssemblyNameDefinition(assemblyName, new Version(0, 0, 0, 0));
-            AssemblyDefinition assembly = AssemblyDefinition.CreateAssembly(nameDefinition, moduleName, ModuleKind.Dll);
+            var moduleParameters = new ModuleParameters {
+                Kind = ModuleKind.Dll,
+                AssemblyResolver = _resolver
+            };
+            AssemblyDefinition assembly = AssemblyDefinition.CreateAssembly(nameDefinition, moduleName, moduleParameters);
             AddAssembly(assembly, names);
         }
     }

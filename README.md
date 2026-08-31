@@ -19,13 +19,18 @@ To run it, simply do `dotnet run <path_to_game_folder>`.
 
 For faster runtime: `dotnet run -c Release <path_to_game_folder>`
 
-To generate the phase-one blank DummyDll assemblies in addition to the existing outputs:
+To generate metadata DummyDll assemblies in addition to the existing outputs:
 
 ```text
 dotnet run -c Release -- <path_to_game_folder> --dummy-dll
 ```
 
 The default output directory is `<path_to_game_folder>/dump`. DummyDll assemblies are written to its `DummyDll` child directory.
+The generator currently restores type/nesting/inheritance/interface relationships, type generic parameters,
+fields, literal constants, field offsets, arrays, closed generic field graphs, and properties with their
+minimal accessor bodies. A `generation-report.json` file is emitted beside the assemblies with coverage and
+fallback diagnostics. Delegate-specific method skeletons and the remaining ordinary methods/events are planned
+for phase three.
 
 Available options:
 

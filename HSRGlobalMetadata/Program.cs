@@ -80,9 +80,20 @@ public static class Program {
             }
 
             if (options.GenerateDummyDll) {
-                Console.WriteLine("Writing blank DummyDll assemblies...");
-                IReadOnlyList<string> files = DummyAssemblyExporter.ExportBlankAssemblies(outputRoot);
-                Console.WriteLine($"Wrote {files.Count} DummyDll assemblies to {Path.Combine(outputRoot, DummyAssemblyExporter.DirectoryName)}.");
+                Console.WriteLine("Writing metadata DummyDll assemblies...");
+                DummyDllExportResult result = DummyAssemblyExporter.ExportAssemblies(outputRoot);
+                Console.WriteLine(
+                    $"Wrote {result.AssemblyPaths.Count} DummyDll assemblies with " +
+                    $"{result.Report.TypeCount} types, {result.Report.FieldCount} fields and " +
+                    $"{result.Report.PropertyCount} properties to " +
+                    $"{Path.Combine(outputRoot, DummyAssemblyExporter.DirectoryName)}."
+                );
+                Console.WriteLine(
+                    $"Serializable public instance fields: {result.Report.SerializableFieldCount}; " +
+                    $"serializable-field placeholders: {result.Report.SerializableFieldPlaceholderCount}; " +
+                    $"all type placeholders: {result.Report.PlaceholderTypeCount}; " +
+                    $"diagnostics: {result.Report.Diagnostics.Count}; report: {result.ReportPath}"
+                );
             }
 
             Console.WriteLine("Finished.");

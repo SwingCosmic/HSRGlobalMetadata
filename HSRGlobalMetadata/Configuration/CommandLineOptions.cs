@@ -117,7 +117,7 @@ public static class CommandLineParser {
           HSRGlobalMetadata <game-directory> [options]
 
         Options:
-          --dummy-dll                 Generate blank DummyDll assemblies.
+          --dummy-dll                 Generate metadata DummyDll assemblies.
           --output <directory>        Output directory. Default: <game-directory>/dump.
           --version <name>            Metadata profile. Default: OSPRODWin4.5.0.
           --metadata-magic <number>   Override metadata magic (decimal or 0x hexadecimal).

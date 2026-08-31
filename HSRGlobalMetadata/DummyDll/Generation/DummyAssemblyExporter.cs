@@ -1,11 +1,13 @@
 using Mono.Cecil;
+using System.Text.Json;
+using HSRGlobalMetadata.DummyDll.Adapters;
 
 namespace HSRGlobalMetadata.DummyDll.Generation;
 
 public static class DummyAssemblyExporter {
     public const string DirectoryName = "DummyDll";
 
-    public static IReadOnlyList<string> ExportBlankAssemblies(string outputRoot) {
+    public static DummyDllExportResult ExportAssemblies(string outputRoot) {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
 
         string normalizedRoot = Path.GetFullPath(outputRoot);
@@ -17,7 +19,8 @@ public static class DummyAssemblyExporter {
 
         Directory.CreateDirectory(stagingDirectory);
         try {
-            using var generator = new BlankDummyAssemblyGenerator(MetadataCache.Images);
+            var source = new HsrDummyMetadataSource();
+            using var generator = new MetadataDummyAssemblyGenerator(source);
             var outputFiles = new List<string>(generator.Assemblies.Count);
 
             foreach (AssemblyDefinition assembly in generator.Assemblies) {
@@ -28,8 +31,18 @@ public static class DummyAssemblyExporter {
                 outputFiles.Add(fileName);
             }
 
+            const string reportFileName = "generation-report.json";
+            string stagingReportPath = Path.Combine(stagingDirectory, reportFileName);
+            File.WriteAllText(stagingReportPath, JsonSerializer.Serialize(generator.Report, new JsonSerializerOptions {
+                WriteIndented = true
+            }));
+
             ReplaceDirectory(stagingDirectory, targetDirectory, backupDirectory);
-            return outputFiles.Select(file => Path.Combine(targetDirectory, file)).ToArray();
+            return new DummyDllExportResult(
+                outputFiles.Select(file => Path.Combine(targetDirectory, file)).ToArray(),
+                Path.Combine(targetDirectory, reportFileName),
+                generator.Report
+            );
         }
         finally {
             DeleteDirectoryIfPresent(stagingDirectory);

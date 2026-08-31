@@ -33,6 +33,28 @@
 
 CLR/Unity 外部依赖优化仍保持可选，第一阶段未实现，不影响进入第二阶段。
 
+### 第二阶段：已完成（2026-08-30）
+
+已完成内容：
+
+- 建立 HSR metadata 只读适配模型和带 image/type/member 范围信息的诊断。
+- 按“程序集/类型骨架 → nested → 类型泛型参数 → parent/interface → 字段 → 属性访问器”多遍生成。
+- 恢复全部 image 覆盖的类型、嵌套关系、继承、接口、字段 flags、literal 常量和 `FieldOffsetAttribute`。
+- 为保障 ExcelTable/JsonConfig 实体字段图可用，提前完成 ARRAY、SZARRAY、PTR、BYREF、VAR/MVAR 和全部封闭 `GENERICINST` 的 Cecil 引用恢复；不再仅限 CLR 集合白名单。
+- 生成属性所需的 getter/setter 签名；普通读写属性复用已有 backing field，缺失时生成 synthetic backing field 和最小 IL。
+- 输出 `generation-report.json`，统计类型、字段、属性、访问器、synthetic backing field、占位类型和结构化诊断。
+- 根据本阶段的实际数据处理目标，将委托专用 `.ctor`/`Invoke`/`BeginInvoke`/`EndInvoke` 骨架调整到第三阶段，与完整方法生成一并处理。
+
+真实样本验证结果：
+
+- 143 个程序集全部写盘并由 Mono.Cecil 重新加载。
+- 生成 80,960 个类型、555,717 个 metadata 字段和 91,745 个属性。
+- 全样本 107,771 个可序列化 public instance field 的占位数量为 0，全部类型占位数量也为 0；22,506 条诊断均为 synthetic backing field 的信息记录，无 warning/error。
+- `RPG.GameCore.AvatarExcelTable.dataDict_` 正确恢复为 `Dictionary<CommonIndexKey, AvatarRow>`，`dataDict` 属性保持相同封闭泛型类型。
+- `RPG.GameCore.OptionTalkInfo` 保持 `[Serializable]` 类型标志，15 个 public instance field 的名称、类型及 `0x10` 至 `0x60` offset 与 `dump.cs` 一致。
+- `RPG.GameCore.JsonConfigListType` 等枚举 literal 值正确写入。
+- 第二阶段单元测试与既有回归测试共 16/16 通过。
+
 ---
 
 ## 1. 总体范围和约束
@@ -286,11 +308,11 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 
 ---
 
-## 3. 第二阶段：生成非泛型类型、委托、属性和字段
+## 3. 第二阶段（已完成）：生成类型、属性和字段
 
 ### 3.1 阶段目标
 
-搭建正式的多遍生成流程，完整产出所有需要本地生成的非泛型类、结构、枚举、接口和委托，并生成字段、字段常量、字段偏移及属性定义。委托必须在字段类型解析前建立，避免涉及委托的字段因为目标类型不存在而退化或生成失败。被外部化的 CLR/Unity 类型不重复生成，但所有对它们的引用必须能够被 resolver 解析。
+搭建正式的多遍生成流程，完整产出所有需要本地生成的类、结构、枚举和接口，并生成字段、字段常量、字段偏移及属性定义。为保证 ExcelTable/JsonConfig 的实体字段图可直接用于第三方数据处理，本阶段实际实现范围扩展到类型泛型参数、封闭泛型、数组及简单复合类型。委托类型仍会作为普通类型和真实成员引用生成，但委托专用方法骨架按本阶段调整后的范围留到第三阶段。
 
 原版生成器必须先创建 `MethodDefinition`，属性才能正确绑定 getter/setter。因此本阶段会建立属性所需的最小访问器骨架。对于同时包含 getter 和 setter 的属性，统一假设其为自动属性，并生成或复用 backing field 以及对应的最小 IL；第三阶段再补齐其他方法签名、方法体和地址信息。
 
@@ -340,7 +362,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 
 4. 对嵌套在泛型父类型下的非泛型类型，为父类型建立必要的类型骨架，避免破坏嵌套结构；泛型参数和约束留到第三阶段完成。
 5. 保留 `typeDefIndex → TypeDefinition` 映射，后续遍次只引用已创建的 Cecil 类型节点。
-6. 在字段遍历前识别所有直接或间接继承 `System.MulticastDelegate` 的类型，并将其加入第二阶段的委托生成集合。
+6. 委托类型在本阶段作为普通类型建立骨架并可被字段真实引用；专用委托方法留到第三阶段。
 
 ### 3.4 第二遍：补充基础类型关系
 
@@ -377,7 +399,9 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 
 5. 禁止使用 `Il2CppType.Name()` 返回的字符串直接拼装 Cecil 类型；即使本阶段只支持基础类型，也应通过统一的 `TypeReference` resolver 创建节点。
 
-### 3.5 生成委托类型
+### 3.5 生成委托类型（调整至第三阶段）
+
+根据第二阶段关键目标调整：本节所述 `.ctor`、`Invoke`、`BeginInvoke` 和 `EndInvoke` 专用方法骨架与第三阶段完整方法生成合并实施。本阶段仍生成委托类型定义、继承关系、泛型参数和成员中的真实 `TypeReference`，不会因缺少委托方法而把字段降级成 `System.Object`。
 
 委托类型必须在字段生成之前完成，以便字段、属性和其他类型可以引用真实的委托 `TypeReference`。
 
@@ -484,7 +508,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 7. 读写自动属性复用已有 backing field，以及缺失时创建 synthetic backing field。
 8. instance/static 自动属性的 getter/setter IL 正确。
 9. interface、abstract 和 indexer 属性不会错误生成 backing field IL。
-10. 非泛型委托定义、`Invoke` 签名及委托字段。
+10. 委托类型及委托字段保持真实引用；委托专用方法签名在第三阶段测试。
 11. CLR 泛型集合成员保留外层集合类型，非 CLR 泛型成员替换为 `System.Object`。
 12. 暂不支持的复杂类型引用能够产生可统计诊断。
 
@@ -505,7 +529,7 @@ dotnet run -c Release -- sample/HSR --dummy-dll
 - 非泛型类型的嵌套关系、父类和基础接口可以正常浏览。
 - 字段和属性的存在性覆盖率为 100%。
 - primitive 和直接 CLASS/VALUETYPE 引用准确。
-- 非泛型委托字段引用真实的 delegate `TypeReference`，不得因委托未生成而退化为 `object`。
+- 委托字段引用真实的 delegate `TypeReference`，不得因委托专用方法延后而退化为 `object`；委托方法骨架不作为本阶段门槛。
 - CLR 集合泛型保留真实的集合类型；其他泛型成员类型有明确的 `object` 占位和诊断。
 - 字段 offset 和 literal 常量与 `dump.cs` 一致。
 - 普通读写属性可在 dnSpy/ILSpy 中显示为带 backing field 的自动属性，并关联最小 getter/setter。
