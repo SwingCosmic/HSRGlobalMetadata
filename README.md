@@ -5,7 +5,7 @@ A proof-of-concept static analysis tool to extract metadata information from `Ho
 ## About
 This tool generates a `dump.cs` and `stringliterals.json` file extracted from the metadata of the game, and from the `GameAssembly.dll` binary. It works completely statically, which means launching the game process is not required.
 
-The tool has been tested to work with the `OSPRODWin4.5.0` version of the game.
+The tool has been tested with the `OSPRODWin4.6.0` version of the game. The `OSPRODWin4.5.0` profile remains available via `--version`.
 
 ## Important
 This tool is a proof-of-concept. Some features may be missing, it may be unstable, or break with game updates. Older versions are not supported, and newer versions can break the tool.
@@ -38,7 +38,7 @@ DummyDll generation restores the metadata structure needed by common .NET inspec
 - method VA, RVA, and PE file offsets when a valid method pointer is available.
 
 The generated assemblies can be loaded with Mono.Cecil and browsed with tools such as dnSpy or ILSpy. DummyDll
-support is currently verified for the built-in `OSPRODWin4.5.0` profile. Other game versions may require a new
+support is currently verified for the built-in `OSPRODWin4.6.0` and `OSPRODWin4.5.0` profiles. Other game versions may require a new
 profile or updated metadata layout settings.
 
 DummyDll files contain metadata stubs, not reconstructed game code. Ordinary managed methods return default
@@ -63,7 +63,7 @@ Available options:
 ```text
 --dummy-dll                 Generate DummyDll assemblies.
 --output <directory>        Override the output directory.
---version <name>            Select a metadata profile (default: OSPRODWin4.5.0).
+--version <name>            Select a metadata profile (default: OSPRODWin4.6.0).
 --metadata-magic <number>   Override metadata magic; decimal and 0x hex are accepted.
 --image-base <number>       Override ImageBase; decimal and 0x hex are accepted.
 --no-dump                   Skip dump.cs generation.

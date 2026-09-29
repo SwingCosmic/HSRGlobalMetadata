@@ -125,7 +125,7 @@ public static class Program {
         Console.WriteLine($"  Version: {profile.Name}");
         Console.WriteLine($"  Metadata magic: {profile.MetadataMagicText}");
         Console.WriteLine($"  ImageBase: {profile.ImageBaseText}");
-        Console.WriteLine($"  Type/Image/Method strides: {profile.Layout.TypeDefinitionSize}/{profile.Layout.ImageDefinitionSize}/{profile.Layout.MethodDefinitionSize}");
+        Console.WriteLine($"  Type/Image/Method/Il2CppType strides: {profile.Layout.TypeDefinitionSize}/{profile.Layout.ImageDefinitionSize}/{profile.Layout.MethodDefinitionSize}/{profile.Layout.Il2CppTypeDefinitionSize}");
         Console.WriteLine($"  Outputs: dump.cs={options.GenerateDump}, stringliterals.json={options.GenerateStringLiterals}, DummyDll={options.GenerateDummyDll}");
         Console.WriteLine($"  Strict validation: {options.Strict}");
     }

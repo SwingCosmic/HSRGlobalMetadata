@@ -40,11 +40,29 @@ public static class RuntimeConfiguration {
             layout.GenericClassDefinitionSize,
             layout.GenericInstDefinitionSize,
             layout.Il2CppTypeDefinitionSize,
+            layout.ArrayTypeDefinitionSize,
             layout.IndexSize,
-            layout.PointerSize
+            layout.PointerSize,
+            layout.Il2CppTypeRecord.Size,
+            layout.Il2CppTypeRecord.DataSize,
+            layout.Il2CppTypeRecord.TypeOffset + 1,
+            layout.Il2CppTypeRecord.FlagsOffset + 1
         };
         if (sizes.Any(size => size <= 0))
             throw new ArgumentOutOfRangeException(nameof(profile), "All metadata layout sizes must be positive.");
+
+        Il2CppTypeRecordLayout typeRecord = layout.Il2CppTypeRecord;
+        if (typeRecord.Size != layout.Il2CppTypeDefinitionSize)
+            throw new ArgumentOutOfRangeException(nameof(profile), "Il2CppType record size must match Il2CppTypeDefinitionSize.");
+        if (typeRecord.DataSize is not (4 or 8))
+            throw new ArgumentOutOfRangeException(nameof(profile), "Il2CppType data size must be 4 or 8.");
+        if (typeRecord.AttrsOffset < typeRecord.DataSize ||
+            typeRecord.TypeOffset <= typeRecord.AttrsOffset ||
+            typeRecord.FlagsOffset <= typeRecord.TypeOffset ||
+            typeRecord.FlagsOffset >= typeRecord.Size) {
+            throw new ArgumentOutOfRangeException(nameof(profile),
+                "Il2CppType field offsets must be increasing and fit in the record size.");
+        }
 
         Il2CppTypeBitLayout typeBits = layout.Il2CppTypeBits;
         if (typeBits.ByReferenceMask == 0 || typeBits.PinnedMask == 0 ||

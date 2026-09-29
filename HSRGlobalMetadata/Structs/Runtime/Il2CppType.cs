@@ -43,11 +43,14 @@ public class Il2CppType {
 
     public Il2CppType(int offset) {
         var bytes = MetadataContext.Instance.GameAssembly;
+        var record = Configuration.RuntimeConfiguration.Current.Layout.Il2CppTypeRecord;
         Offset = offset;
-        Data = BitConverter.ToUInt64(bytes, offset);
-        Attrs = BitConverter.ToUInt16(bytes, offset + 8);
-        Type = bytes[offset + 10];
-        PackedFlags = bytes[offset + 11];
+        Data = record.DataSize == 8
+            ? BitConverter.ToUInt64(bytes, offset)
+            : BitConverter.ToUInt32(bytes, offset);
+        Attrs = BitConverter.ToUInt16(bytes, offset + record.AttrsOffset);
+        Type = bytes[offset + record.TypeOffset];
+        PackedFlags = bytes[offset + record.FlagsOffset];
         (NumModifiers, IsByReference, IsPinned) = DecodePackedFlags(
             PackedFlags,
             Configuration.RuntimeConfiguration.Current.Layout.Il2CppTypeBits
@@ -134,24 +137,17 @@ public class Il2CppType {
             
             case 0x0F:
                 if (Data == 0) return "void*";
-                return new Il2CppType((int)PEHelper.RvaToOffset((uint)(Data - ImageBase))).Name() + "*";
+                return ResolveIndirect().Name() + "*";
 
             case 0x14:
-                ulong arrayEntryOffset = PEHelper.RvaToOffset((uint)(Data-ImageBase));
-                long arrayElemPtr = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly, (int)arrayEntryOffset);
-                ulong arrayElemOffset = PEHelper.RvaToOffset((uint)((ulong)arrayElemPtr - ImageBase));
-                int arrayRank = MetadataContext.Instance.GameAssembly[
-                    (int)arrayEntryOffset + Configuration.RuntimeConfiguration.Current.Layout.PointerSize
-                ];
-                return $"{new Il2CppType((int)arrayElemOffset).Name()}[{new string(',', arrayRank - 1)}]";
+                (int arrayElemOffset, int arrayRank) = ResolveArrayDescriptor();
+                return $"{new Il2CppType(arrayElemOffset).Name()}[{new string(',', arrayRank - 1)}]";
 
             case 0x1D:
-                return new Il2CppType((int)PEHelper.RvaToOffset((uint)(Data - ImageBase))).Name() + "[]";
+                return ResolveIndirect().Name() + "[]";
 
             case 0x10:
-                ulong innerRva = Data - ImageBase;
-                ulong innerOffset = PEHelper.RvaToOffset((uint)innerRva);
-                return new Il2CppType((int)innerOffset).Name();
+                return ResolveIndirect().Name();
             
             case 0x13:
             case 0x1E:
@@ -173,6 +169,34 @@ public class Il2CppType {
                 Console.WriteLine($"Unsupported type: {Type}, data: {Data:X}, RVA: 0x{PEHelper.OffsetToRva((ulong)Offset):X}");
                 return "object";
         }
+    }
+
+    public Il2CppType ResolveIndirect() {
+        if (Configuration.RuntimeConfiguration.Current.Layout.Il2CppTypeRecord.IndirectDataIsTypeIndex)
+            return FromIndex(checked((int)Data));
+        if (Data == 0)
+            throw new InvalidDataException($"IL2CPP type at 0x{Offset:X} has a null indirect pointer.");
+        return new Il2CppType(checked((int)PEHelper.RvaToOffset((uint)(Data - ImageBase))));
+    }
+
+    public (int ElementOffset, int Rank) ResolveArrayDescriptor() {
+        var layout = Configuration.RuntimeConfiguration.Current.Layout;
+        int entryOffset;
+        if (layout.Il2CppTypeRecord.IndirectDataIsTypeIndex) {
+            ulong rva = checked((ulong)MetadataRegistration.Instance.ArrayOffset + Data * (ulong)layout.ArrayTypeDefinitionSize);
+            entryOffset = checked((int)PEHelper.RvaToOffset((uint)rva));
+        }
+        else {
+            entryOffset = checked((int)PEHelper.RvaToOffset((uint)(Data - ImageBase)));
+        }
+
+        byte[] gameAssembly = MetadataContext.Instance.GameAssembly;
+        long arrayElemPtr = BitConverter.ToInt64(gameAssembly, entryOffset);
+        int arrayRank = gameAssembly[entryOffset + layout.PointerSize];
+        if (arrayRank <= 0)
+            throw new InvalidDataException($"IL2CPP array descriptor at 0x{entryOffset:X} has rank {arrayRank}.");
+        int elementOffset = checked((int)PEHelper.RvaToOffset((uint)((ulong)arrayElemPtr - ImageBase)));
+        return (elementOffset, arrayRank);
     }
 
     public static string ResolveTypeDefName(int typeDefinitionIndex) {

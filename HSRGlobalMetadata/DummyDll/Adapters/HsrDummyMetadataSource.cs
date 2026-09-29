@@ -265,13 +265,13 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
                 signature = DummyTypeSignature.Primitive(type.Type);
             }
             else signature = type.Type switch {
-                0x0F => DummyTypeSignature.Pointer(DescribeIndirect(type.Data, activeOffsets, depth)),
-                0x10 => DummyTypeSignature.ByReference(DescribeIndirect(type.Data, activeOffsets, depth)),
+                0x0F => DummyTypeSignature.Pointer(DescribeIndirectType(type, activeOffsets, depth)),
+                0x10 => DummyTypeSignature.ByReference(DescribeIndirectType(type, activeOffsets, depth)),
                 0x11 or 0x12 => DescribeDefinition(type),
                 0x13 => DummyTypeSignature.GenericParameter(type.Type, checked((int)type.Data), method: false),
                 0x14 => DescribeArray(type, activeOffsets, depth),
                 0x15 => DescribeGenericInstance(type, activeOffsets, depth),
-                0x1D => DummyTypeSignature.Array(type.Type, DescribeIndirect(type.Data, activeOffsets, depth)),
+                0x1D => DummyTypeSignature.Array(type.Type, DescribeIndirectType(type, activeOffsets, depth)),
                 0x1E => DummyTypeSignature.GenericParameter(type.Type, checked((int)type.Data), method: true),
                 _ => DummyTypeSignature.Unsupported(type.Type,
                     $"Unsupported IL2CPP type code 0x{type.Type:X2}, data 0x{type.Data:X}.")
@@ -300,18 +300,17 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         return DescribeType(new Il2CppType(offset), activeOffsets, depth + 1);
     }
 
+    private DummyTypeSignature DescribeIndirectType(Il2CppType type, HashSet<int> activeOffsets, int depth) {
+        if (type.Data == 0 && type.Type == 0x0F)
+            return DummyTypeSignature.Primitive(0x01);
+        return DescribeType(type.ResolveIndirect(), activeOffsets, depth + 1);
+    }
+
     private DummyTypeSignature DescribeArray(Il2CppType type, HashSet<int> activeOffsets, int depth) {
-        int arrayOffset = VirtualAddressToOffset(type.Data);
-        byte[] gameAssembly = MetadataContext.Instance.GameAssembly;
-        EnsureReadable(gameAssembly, arrayOffset, Configuration.RuntimeConfiguration.Current.Layout.PointerSize + 1,
-            "IL2CPP array descriptor");
-        ulong elementPointer = BitConverter.ToUInt64(gameAssembly, arrayOffset);
-        int rank = gameAssembly[arrayOffset + Configuration.RuntimeConfiguration.Current.Layout.PointerSize];
-        if (rank <= 0)
-            throw new InvalidDataException($"IL2CPP array descriptor at 0x{arrayOffset:X} has rank {rank}.");
+        (int elementOffset, int rank) = type.ResolveArrayDescriptor();
         return DummyTypeSignature.Array(
             type.Type,
-            DescribeIndirect(elementPointer, activeOffsets, depth),
+            DescribeType(new Il2CppType(elementOffset), activeOffsets, depth + 1),
             rank
         );
     }
