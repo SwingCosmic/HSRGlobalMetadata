@@ -4,16 +4,46 @@ public sealed record Il2CppTypeBitLayout(
     byte ModifiersMask,
     byte ByReferenceMask,
     byte PinnedMask
-);
+) {
+    public static Il2CppTypeBitLayout PackedPreV272 { get; } = new(
+        ModifiersMask: 0x3F,
+        ByReferenceMask: 0x40,
+        PinnedMask: 0x80
+    );
+}
 
 public sealed record Il2CppTypeRecordLayout(
+    string Name,
     int Size,
     int DataSize,
     int AttrsOffset,
     int TypeOffset,
     int FlagsOffset,
-    bool IndirectDataIsTypeIndex
-);
+    bool IndirectDataIsTypeIndex,
+    int ArrayDescriptorSize
+) {
+    public static Il2CppTypeRecordLayout IndexBased8 { get; } = new(
+        Name: "IndexBased8",
+        Size: 8,
+        DataSize: 4,
+        AttrsOffset: 4,
+        TypeOffset: 6,
+        FlagsOffset: 7,
+        IndirectDataIsTypeIndex: true,
+        ArrayDescriptorSize: 32
+    );
+
+    public static Il2CppTypeRecordLayout VaBased16 { get; } = new(
+        Name: "VaBased16",
+        Size: 16,
+        DataSize: 8,
+        AttrsOffset: 8,
+        TypeOffset: 10,
+        FlagsOffset: 11,
+        IndirectDataIsTypeIndex: false,
+        ArrayDescriptorSize: 16
+    );
+}
 
 public sealed record MetadataLayout(
     int MetadataHeaderSize,
@@ -30,20 +60,20 @@ public sealed record MetadataLayout(
     int GenericParameterConstraintDefinitionSize,
     int GenericClassDefinitionSize,
     int GenericInstDefinitionSize,
-    int Il2CppTypeDefinitionSize,
-    int ArrayTypeDefinitionSize,
     int IndexSize,
     int PointerSize,
     Il2CppTypeBitLayout Il2CppTypeBits,
-    Il2CppTypeRecordLayout Il2CppTypeRecord
+    Il2CppTypeRecordLayout Il2CppTypeRecord,
+    RegistrationLayout Registration
 ) {
-    private static readonly Il2CppTypeBitLayout PackedPreV272Bits = new(
-        ModifiersMask: 0x3F,
-        ByReferenceMask: 0x40,
-        PinnedMask: 0x80
-    );
+    public int Il2CppTypeDefinitionSize => Il2CppTypeRecord.Size;
+    public int ArrayTypeDefinitionSize => Il2CppTypeRecord.ArrayDescriptorSize;
 
-    public static MetadataLayout OspProdWin450 { get; } = new(
+    public static MetadataLayout Compose(
+        Il2CppTypeRecordLayout typeRecord,
+        RegistrationLayout registration,
+        Il2CppTypeBitLayout? typeBits = null
+    ) => new(
         MetadataHeaderSize: 0x208,
         TypeDefinitionSize: 70,
         ImageDefinitionSize: 40,
@@ -58,31 +88,10 @@ public sealed record MetadataLayout(
         GenericParameterConstraintDefinitionSize: 4,
         GenericClassDefinitionSize: 8,
         GenericInstDefinitionSize: 16,
-        Il2CppTypeDefinitionSize: 16,
-        ArrayTypeDefinitionSize: 16,
         IndexSize: 4,
         PointerSize: 8,
-        Il2CppTypeBits: PackedPreV272Bits,
-        Il2CppTypeRecord: new Il2CppTypeRecordLayout(
-            Size: 16,
-            DataSize: 8,
-            AttrsOffset: 8,
-            TypeOffset: 10,
-            FlagsOffset: 11,
-            IndirectDataIsTypeIndex: false
-        )
+        Il2CppTypeBits: typeBits ?? Il2CppTypeBitLayout.PackedPreV272,
+        Il2CppTypeRecord: typeRecord,
+        Registration: registration
     );
-
-    public static MetadataLayout OspProdWin460 { get; } = OspProdWin450 with {
-        Il2CppTypeDefinitionSize = 8,
-        ArrayTypeDefinitionSize = 32,
-        Il2CppTypeRecord = new Il2CppTypeRecordLayout(
-            Size: 8,
-            DataSize: 4,
-            AttrsOffset: 4,
-            TypeOffset: 6,
-            FlagsOffset: 7,
-            IndirectDataIsTypeIndex: true
-        )
-    };
 }

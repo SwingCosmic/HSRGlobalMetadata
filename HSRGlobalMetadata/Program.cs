@@ -126,6 +126,8 @@ public static class Program {
         Console.WriteLine($"  Metadata magic: {profile.MetadataMagicText}");
         Console.WriteLine($"  ImageBase: {profile.ImageBaseText}");
         Console.WriteLine($"  Type/Image/Method/Il2CppType strides: {profile.Layout.TypeDefinitionSize}/{profile.Layout.ImageDefinitionSize}/{profile.Layout.MethodDefinitionSize}/{profile.Layout.Il2CppTypeDefinitionSize}");
+        Console.WriteLine($"  Il2CppType record: {profile.Layout.Il2CppTypeRecord.Name} (data={(profile.Layout.Il2CppTypeRecord.IndirectDataIsTypeIndex ? "type index" : "VA")})");
+        Console.WriteLine($"  Registration slots: {profile.Layout.Registration.Name}");
         Console.WriteLine($"  Outputs: dump.cs={options.GenerateDump}, stringliterals.json={options.GenerateStringLiterals}, DummyDll={options.GenerateDummyDll}");
         Console.WriteLine($"  Strict validation: {options.Strict}");
     }

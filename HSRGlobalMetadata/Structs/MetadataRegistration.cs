@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs;
@@ -11,15 +12,15 @@ public class MetadataRegistration : MetadataBase {
     }
     
     public static void Initialize(string gameAssemblyPath) {
+        RegistrationLayout registration = RuntimeConfiguration.Current.Layout.Registration;
         long metadataRegistrationPtr = RegisterPointersFunction.Initialize(gameAssemblyPath).GetMetadataRegistration();
-        byte[] bytes = new ArraySegment<byte>(MetadataContext.Instance.GameAssembly, (int)metadataRegistrationPtr, 0x100).ToArray();
+        byte[] bytes = new ArraySegment<byte>(MetadataContext.Instance.GameAssembly, (int)metadataRegistrationPtr, registration.MetadataRegistrationSize).ToArray();
         _instance = new MetadataRegistration(bytes);
     }
 
-    private long ToFileOffset(long va) => va - checked((long)Configuration.RuntimeConfiguration.Current.ImageBase);
+    private long ToFileOffset(long va) => va - checked((long)RuntimeConfiguration.Current.ImageBase);
     private long ReadPtr(int offset) => ToFileOffset(BitConverter.ToInt64(_bytes, offset));
 
-    [MetadataTag(0x48, MetadataOperation.SUB, 1455078204)]
     public int TypeInfoCount { get; set; }
     
     public long TypesRva { get; private set; }
@@ -27,8 +28,10 @@ public class MetadataRegistration : MetadataBase {
     public long ArrayOffset { get; set; }
     
     protected override void PostProcess() {
-        GenericInstsOffset = ReadPtr(0x38);
-        TypesRva = ReadPtr(0x80);
-        ArrayOffset = ReadPtr(0x70);
+        RegistrationLayout registration = RuntimeConfiguration.Current.Layout.Registration;
+        TypeInfoCount = registration.TypeInfoCount.DecodeInt32(_bytes);
+        GenericInstsOffset = ReadPtr(registration.GenericInstsOffset);
+        TypesRva = ReadPtr(registration.TypesRvaOffset);
+        ArrayOffset = ReadPtr(registration.ArrayOffset);
     }
 }

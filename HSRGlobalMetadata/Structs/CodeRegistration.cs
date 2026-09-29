@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs;
@@ -12,17 +13,18 @@ public class CodeRegistration : MetadataBase {
     
     public static void Initialize(string gameAssemblyPath) {
         if (_instance != null) return;
+        RegistrationLayout registration = RuntimeConfiguration.Current.Layout.Registration;
         long codeRegistrationPtr = RegisterPointersFunction.Initialize(gameAssemblyPath).GetCodeRegistration();
-        byte[] bytes = new ArraySegment<byte>(MetadataContext.Instance.GameAssembly, (int)codeRegistrationPtr, 0x100).ToArray();
+        byte[] bytes = new ArraySegment<byte>(MetadataContext.Instance.GameAssembly, (int)codeRegistrationPtr, registration.CodeRegistrationSize).ToArray();
         _instance = new CodeRegistration(bytes);
     }
 
-    private long ToFileOffset(long va) => va - checked((long)Configuration.RuntimeConfiguration.Current.ImageBase);
+    private long ToFileOffset(long va) => va - checked((long)RuntimeConfiguration.Current.ImageBase);
     private long ReadPtr(int offset) => ToFileOffset(BitConverter.ToInt64(_bytes, offset));
 
     public long MethodPointer { get; private set; }
 
     protected override void PostProcess() {
-        MethodPointer = ReadPtr(0x40);
+        MethodPointer = ReadPtr(RuntimeConfiguration.Current.Layout.Registration.MethodPointerOffset);
     }
 }

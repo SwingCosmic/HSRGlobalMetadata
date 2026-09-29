@@ -2,6 +2,7 @@ using HSRGlobalMetadata.Configuration;
 
 namespace HSRGlobalMetadata.Tests;
 
+[Collection("RuntimeConfiguration")]
 public sealed class RuntimeConfigurationTests {
     [Fact]
     public void DefaultProfileContainsVerifiedSampleLayout() {
@@ -16,13 +17,32 @@ public sealed class RuntimeConfigurationTests {
         Assert.Equal(8, profile.Layout.Il2CppTypeDefinitionSize);
         Assert.Equal(4, profile.Layout.Il2CppTypeRecord.DataSize);
         Assert.True(profile.Layout.Il2CppTypeRecord.IndirectDataIsTypeIndex);
+        Assert.Same(Il2CppTypeRecordLayout.IndexBased8, profile.Layout.Il2CppTypeRecord);
+        Assert.Same(RegistrationLayout.OsProdWin450, profile.Layout.Registration);
     }
 
     [Fact]
-    public void OspProdWin450ProfileKeepsSixteenByteIl2CppTypeRecords() {
+    public void OsProdWin450ProfileKeepsSixteenByteIl2CppTypeRecords() {
         Assert.True(VersionProfiles.TryGet("OSPRODWin4.5.0", out VersionProfile profile));
         Assert.Equal(16, profile.Layout.Il2CppTypeDefinitionSize);
         Assert.Equal(8, profile.Layout.Il2CppTypeRecord.DataSize);
         Assert.False(profile.Layout.Il2CppTypeRecord.IndirectDataIsTypeIndex);
+        Assert.Same(Il2CppTypeRecordLayout.VaBased16, profile.Layout.Il2CppTypeRecord);
+        Assert.Same(RegistrationLayout.OsProdWin450, profile.Layout.Registration);
+    }
+
+    [Fact]
+    public void InitializeAcceptsEveryBuiltInProfile() {
+        VersionProfile previous = RuntimeConfiguration.Current;
+        try {
+            foreach (string name in VersionProfiles.Names) {
+                Assert.True(VersionProfiles.TryGet(name, out VersionProfile profile));
+                RuntimeConfiguration.Initialize(profile);
+                Assert.Equal(name, RuntimeConfiguration.Current.Name);
+            }
+        }
+        finally {
+            RuntimeConfiguration.Initialize(previous);
+        }
     }
 }

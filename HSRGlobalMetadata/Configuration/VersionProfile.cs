@@ -11,23 +11,39 @@ public sealed record VersionProfile(
 }
 
 public static class VersionProfiles {
-    public const string OspProdWin450Name = "OSPRODWin4.5.0";
-    public const string OspProdWin460Name = "OSPRODWin4.6.0";
-    public const string DefaultName = OspProdWin460Name;
+    public const string OsProdWin430Name = "OSPRODWin4.3.0";
+    public const string OsProdWin440Name = "OSPRODWin4.4.0";
+    public const string OsProdWin450Name = "OSPRODWin4.5.0";
+    public const string OsProdWin460Name = "OSPRODWin4.6.0";
+    public const string DefaultName = OsProdWin460Name;
 
+    public const uint DefaultMetadataMagic = 0x0059484D;
+    public const ulong DefaultImageBase = 0x180000000;
+
+    // Profiles are recipes over two independently versioned modes:
+    // Il2CppType records (IndexBased8 vs VaBased16) and GameAssembly registration slots
+    // (OsProdWin440 vs OsProdWin450). 4.3→4.4 switched the type record; 4.4→4.5 shuffled
+    // registration slots; 4.5→4.6 switched the type record back. A later version that
+    // reuses both modes only needs a new dictionary entry here.
     private static readonly Dictionary<string, VersionProfile> Profiles = new(StringComparer.OrdinalIgnoreCase) {
-        [OspProdWin450Name] = Create(OspProdWin450Name, MetadataLayout.OspProdWin450),
-        [OspProdWin460Name] = Create(OspProdWin460Name, MetadataLayout.OspProdWin460)
+        [OsProdWin430Name] = Create(OsProdWin430Name, Il2CppTypeRecordLayout.IndexBased8, RegistrationLayout.OsProdWin440),
+        [OsProdWin440Name] = Create(OsProdWin440Name, Il2CppTypeRecordLayout.VaBased16, RegistrationLayout.OsProdWin440),
+        [OsProdWin450Name] = Create(OsProdWin450Name, Il2CppTypeRecordLayout.VaBased16, RegistrationLayout.OsProdWin450),
+        [OsProdWin460Name] = Create(OsProdWin460Name, Il2CppTypeRecordLayout.IndexBased8, RegistrationLayout.OsProdWin450)
     };
 
     public static IReadOnlyCollection<string> Names => Profiles.Keys;
 
     public static bool TryGet(string name, out VersionProfile profile) => Profiles.TryGetValue(name, out profile!);
 
-    private static VersionProfile Create(string name, MetadataLayout layout) => new(
+    public static VersionProfile Create(
+        string name,
+        Il2CppTypeRecordLayout typeRecord,
+        RegistrationLayout registration
+    ) => new(
         name,
-        MetadataMagic: 0x0059484D,
-        ImageBase: 0x180000000,
-        layout
+        MetadataMagic: DefaultMetadataMagic,
+        ImageBase: DefaultImageBase,
+        MetadataLayout.Compose(typeRecord, registration)
     );
 }

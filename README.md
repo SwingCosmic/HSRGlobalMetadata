@@ -5,7 +5,16 @@ A proof-of-concept static analysis tool to extract metadata information from `Ho
 ## About
 This tool generates a `dump.cs` and `stringliterals.json` file extracted from the metadata of the game, and from the `GameAssembly.dll` binary. It works completely statically, which means launching the game process is not required.
 
-The tool has been tested with the `OSPRODWin4.6.0` version of the game. The `OSPRODWin4.5.0` profile remains available via `--version`.
+The tool has been tested with the `OSPRODWin4.6.0` version of the game. Built-in profiles are selected with `--version`:
+
+| Profile | Il2CppType record | Registration slots |
+| --- | --- | --- |
+| `OSPRODWin4.3.0` | 8-byte type index (`IndexBased8`) | `OsProdWin440` |
+| `OSPRODWin4.4.0` | 16-byte VA (`VaBased16`) | `OsProdWin440` |
+| `OSPRODWin4.5.0` | 16-byte VA (`VaBased16`) | `OsProdWin450` |
+| `OSPRODWin4.6.0` (default) | 8-byte type index (`IndexBased8`) | `OsProdWin450` |
+
+`OSPRODWin4.5.0` and `OSPRODWin4.6.0` are the verified combinations. `OSPRODWin4.3.0` and `OSPRODWin4.4.0` reuse the original author's published offsets as the same two modes. A later game version that only switches one of those axes is a new dictionary entry in `VersionProfiles`, plus a new named mode if an offset table actually changed.
 
 ## Important
 This tool is a proof-of-concept. Some features may be missing, it may be unstable, or break with game updates. Older versions are not supported, and newer versions can break the tool.
@@ -39,7 +48,7 @@ DummyDll generation restores the metadata structure needed by common .NET inspec
 
 The generated assemblies can be loaded with Mono.Cecil and browsed with tools such as dnSpy or ILSpy. DummyDll
 support is currently verified for the built-in `OSPRODWin4.6.0` and `OSPRODWin4.5.0` profiles. Other game versions may require a new
-profile or updated metadata layout settings.
+named type-record or registration mode, then a new `VersionProfiles` entry that composes them.
 
 DummyDll files contain metadata stubs, not reconstructed game code. Ordinary managed methods return default
 values, and metadata that is not available from the current parser is not fabricated.

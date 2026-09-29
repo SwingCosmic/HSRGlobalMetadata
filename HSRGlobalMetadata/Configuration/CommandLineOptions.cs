@@ -120,6 +120,8 @@ public static class CommandLineParser {
           --dummy-dll                 Generate metadata DummyDll assemblies.
           --output <directory>        Output directory. Default: <game-directory>/dump.
           --version <name>            Metadata profile. Default: OSPRODWin4.6.0.
+                                      Built-in: OSPRODWin4.3.0, OSPRODWin4.4.0,
+                                      OSPRODWin4.5.0, OSPRODWin4.6.0.
           --metadata-magic <number>   Override metadata magic (decimal or 0x hexadecimal).
           --image-base <number>       Override PE image base (decimal or 0x hexadecimal).
           --no-dump                   Do not generate dump.cs.

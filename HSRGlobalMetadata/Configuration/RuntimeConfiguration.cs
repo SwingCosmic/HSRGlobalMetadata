@@ -45,6 +45,7 @@ public static class RuntimeConfiguration {
             layout.PointerSize,
             layout.Il2CppTypeRecord.Size,
             layout.Il2CppTypeRecord.DataSize,
+            layout.Il2CppTypeRecord.ArrayDescriptorSize,
             layout.Il2CppTypeRecord.TypeOffset + 1,
             layout.Il2CppTypeRecord.FlagsOffset + 1
         };
@@ -52,8 +53,8 @@ public static class RuntimeConfiguration {
             throw new ArgumentOutOfRangeException(nameof(profile), "All metadata layout sizes must be positive.");
 
         Il2CppTypeRecordLayout typeRecord = layout.Il2CppTypeRecord;
-        if (typeRecord.Size != layout.Il2CppTypeDefinitionSize)
-            throw new ArgumentOutOfRangeException(nameof(profile), "Il2CppType record size must match Il2CppTypeDefinitionSize.");
+        if (string.IsNullOrWhiteSpace(typeRecord.Name))
+            throw new ArgumentOutOfRangeException(nameof(profile), "Il2CppType record layout must have a name.");
         if (typeRecord.DataSize is not (4 or 8))
             throw new ArgumentOutOfRangeException(nameof(profile), "Il2CppType data size must be 4 or 8.");
         if (typeRecord.AttrsOffset < typeRecord.DataSize ||
@@ -72,5 +73,40 @@ public static class RuntimeConfiguration {
             throw new ArgumentOutOfRangeException(nameof(profile),
                 "Il2CppType bit masks must be non-overlapping and include byref and pinned bits.");
         }
+
+        ValidateRegistration(layout.Registration);
+    }
+
+    private static void ValidateRegistration(RegistrationLayout registration) {
+        if (string.IsNullOrWhiteSpace(registration.Name))
+            throw new ArgumentOutOfRangeException(nameof(registration), "Registration layout must have a name.");
+
+        if (registration.CodeRegistrationSize <= 0 ||
+            registration.MetadataRegistrationSize <= 0 ||
+            registration.MetadataTablesSize <= 0) {
+            throw new ArgumentOutOfRangeException(nameof(registration), "Registration blob sizes must be positive.");
+        }
+
+        RequirePointerInBlob(registration.MethodPointerOffset, registration.CodeRegistrationSize, "MethodPointer");
+        RequireEncryptedInBlob(registration.TypeInfoCount, registration.MetadataRegistrationSize, "TypeInfoCount");
+        RequirePointerInBlob(registration.GenericInstsOffset, registration.MetadataRegistrationSize, "GenericInsts");
+        RequirePointerInBlob(registration.TypesRvaOffset, registration.MetadataRegistrationSize, "TypesRva");
+        RequirePointerInBlob(registration.ArrayOffset, registration.MetadataRegistrationSize, "ArrayOffset");
+        RequireInt32InBlob(registration.StringLiteralRvaOffset, registration.MetadataTablesSize, "StringLiteralRva");
+        RequireEncryptedInBlob(registration.StringLiteralCount, registration.MetadataTablesSize, "StringLiteralCount");
+    }
+
+    private static void RequirePointerInBlob(int offset, int blobSize, string name) {
+        if (offset < 0 || offset + 8 > blobSize)
+            throw new ArgumentOutOfRangeException(nameof(offset), $"{name} offset 0x{offset:X} must fit an 8-byte pointer in a 0x{blobSize:X} blob.");
+    }
+
+    private static void RequireInt32InBlob(int offset, int blobSize, string name) {
+        if (offset < 0 || offset + 4 > blobSize)
+            throw new ArgumentOutOfRangeException(nameof(offset), $"{name} offset 0x{offset:X} must fit a 4-byte field in a 0x{blobSize:X} blob.");
+    }
+
+    private static void RequireEncryptedInBlob(EncryptedField field, int blobSize, string name) {
+        RequireInt32InBlob(field.Offset, blobSize, name);
     }
 }

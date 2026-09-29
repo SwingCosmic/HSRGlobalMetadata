@@ -61,7 +61,7 @@ public class Il2CppType {
         byte packedFlags,
         Configuration.Il2CppTypeBitLayout? layout = null
     ) {
-        layout ??= Configuration.MetadataLayout.OspProdWin450.Il2CppTypeBits;
+        layout ??= Configuration.Il2CppTypeBitLayout.PackedPreV272;
         return (
             (byte)(packedFlags & layout.ModifiersMask),
             (packedFlags & layout.ByReferenceMask) != 0,
