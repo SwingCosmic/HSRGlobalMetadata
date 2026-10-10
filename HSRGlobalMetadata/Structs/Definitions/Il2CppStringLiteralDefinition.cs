@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs.Definitions;
@@ -6,7 +7,7 @@ public class Il2CppStringLiteral : MetadataBase {
   private readonly int _index;
 
   public Il2CppStringLiteral(int index): base(MetadataContext.Instance.Metadata,
-    MetadataHeader.Instance.StringLiteralOffset + Configuration.RuntimeConfiguration.Current.Layout.IndexSize * index) {
+    MetadataHeader.Instance.StringLiteralOffset + MetadataConstants.IndexSize * index) {
     _index = index;
     Populate();
   }

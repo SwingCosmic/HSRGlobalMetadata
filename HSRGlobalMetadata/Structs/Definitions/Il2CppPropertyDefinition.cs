@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs.Definitions;
@@ -17,7 +18,7 @@ public class Il2CppPropertyDefinition : MetadataBase {
     public string Name { get; private set; }
 
     public Il2CppPropertyDefinition(int index) : base(MetadataContext.Instance.Metadata,
-        MetadataHeader.Instance.PropertiesOffset + Configuration.RuntimeConfiguration.Current.Layout.PropertyDefinitionSize * index) {
+        MetadataHeader.Instance.PropertiesOffset + MetadataConstants.PropertyDefinitionSize * index) {
         _index = index;
         Populate();
     }

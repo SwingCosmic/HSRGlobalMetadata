@@ -23,6 +23,6 @@ public class MetadataTables: MetadataBase {
   }
 
   protected override void PostProcess() {
-    StringLiteralRva = unchecked(StringLiteralRva - (int)Configuration.RuntimeConfiguration.Current.ImageBase);
+    StringLiteralRva = unchecked(StringLiteralRva - (int)PEHelper.ImageBase);
   }
 }

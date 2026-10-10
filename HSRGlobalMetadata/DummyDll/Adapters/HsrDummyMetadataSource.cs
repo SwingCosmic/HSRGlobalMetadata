@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.DummyDll.Model;
 using HSRGlobalMetadata.Structs;
 using HSRGlobalMetadata.Structs.Definitions;
@@ -232,7 +233,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         }
 
         ulong va = (ulong)methodPointer;
-        ulong imageBase = Configuration.RuntimeConfiguration.Current.ImageBase;
+        ulong imageBase = PEHelper.ImageBase;
         if (va < imageBase) {
             error = $"Method pointer 0x{va:X} is below ImageBase 0x{imageBase:X}.";
             return null;
@@ -265,13 +266,13 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
                 signature = DummyTypeSignature.Primitive(type.Type);
             }
             else signature = type.Type switch {
-                0x0F => DummyTypeSignature.Pointer(DescribeIndirect(type.Data, activeOffsets, depth)),
-                0x10 => DummyTypeSignature.ByReference(DescribeIndirect(type.Data, activeOffsets, depth)),
+                0x0F => DummyTypeSignature.Pointer(DescribeIndirectType(type, activeOffsets, depth)),
+                0x10 => DummyTypeSignature.ByReference(DescribeIndirectType(type, activeOffsets, depth)),
                 0x11 or 0x12 => DescribeDefinition(type),
                 0x13 => DummyTypeSignature.GenericParameter(type.Type, checked((int)type.Data), method: false),
                 0x14 => DescribeArray(type, activeOffsets, depth),
                 0x15 => DescribeGenericInstance(type, activeOffsets, depth),
-                0x1D => DummyTypeSignature.Array(type.Type, DescribeIndirect(type.Data, activeOffsets, depth)),
+                0x1D => DummyTypeSignature.Array(type.Type, DescribeIndirectType(type, activeOffsets, depth)),
                 0x1E => DummyTypeSignature.GenericParameter(type.Type, checked((int)type.Data), method: true),
                 _ => DummyTypeSignature.Unsupported(type.Type,
                     $"Unsupported IL2CPP type code 0x{type.Type:X2}, data 0x{type.Data:X}.")
@@ -289,6 +290,12 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         }
     }
 
+    private DummyTypeSignature DescribeIndirectType(Il2CppType type, HashSet<int> activeOffsets, int depth) {
+        if (type.Data == 0 && type.Type == 0x0F)
+            return DummyTypeSignature.Primitive(0x01);
+        return DescribeType(type.ResolveIndirect(), activeOffsets, depth + 1);
+    } 
+
     private DummyTypeSignature DescribeDefinition(Il2CppType type) {
         int definitionIndex = checked((int)type.Data);
         ValidateIndex(definitionIndex, TypeCount, "type definition referenced by IL2CPP type");
@@ -301,17 +308,10 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
     }
 
     private DummyTypeSignature DescribeArray(Il2CppType type, HashSet<int> activeOffsets, int depth) {
-        int arrayOffset = VirtualAddressToOffset(type.Data);
-        byte[] gameAssembly = MetadataContext.Instance.GameAssembly;
-        EnsureReadable(gameAssembly, arrayOffset, Configuration.RuntimeConfiguration.Current.Layout.PointerSize + 1,
-            "IL2CPP array descriptor");
-        ulong elementPointer = BitConverter.ToUInt64(gameAssembly, arrayOffset);
-        int rank = gameAssembly[arrayOffset + Configuration.RuntimeConfiguration.Current.Layout.PointerSize];
-        if (rank <= 0)
-            throw new InvalidDataException($"IL2CPP array descriptor at 0x{arrayOffset:X} has rank {rank}.");
+        (int elementOffset, int rank) = type.ResolveArray();
         return DummyTypeSignature.Array(
             type.Type,
-            DescribeIndirect(elementPointer, activeOffsets, depth),
+            DescribeType(new Il2CppType(elementOffset), activeOffsets, depth + 1),
             rank
         );
     }
@@ -323,7 +323,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
     ) {
         int genericClassIndex = checked((int)type.Data);
         int classOffset = checked(MetadataHeader.Instance.GenericClassOffset +
-                                  genericClassIndex * Configuration.RuntimeConfiguration.Current.Layout.GenericClassDefinitionSize);
+            genericClassIndex * MetadataConstants.GenericClassDefinitionSize);
         byte[] startup = MetadataContext.Instance.StartupMetadata;
         EnsureReadable(startup, classOffset, 8, "generic class descriptor");
         int definitionIndex = BitConverter.ToInt32(startup, classOffset);
@@ -335,7 +335,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
 
         int instanceBase = checked((int)PEHelper.RvaToOffset((uint)MetadataRegistration.Instance.GenericInstsOffset));
         int instanceOffset = checked(instanceBase +
-                                     instanceIndex * Configuration.RuntimeConfiguration.Current.Layout.GenericInstDefinitionSize);
+            instanceIndex * MetadataConstants.GenericInstDefinitionSize);
         byte[] gameAssembly = MetadataContext.Instance.GameAssembly;
         EnsureReadable(gameAssembly, instanceOffset, 16, "generic instance descriptor");
         int argumentCount = BitConverter.ToInt32(gameAssembly, instanceOffset);
@@ -345,13 +345,13 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
 
         int argumentArrayOffset = VirtualAddressToOffset(argumentArrayPointer);
         EnsureReadable(gameAssembly, argumentArrayOffset,
-            checked(argumentCount * Configuration.RuntimeConfiguration.Current.Layout.PointerSize),
+            checked(argumentCount * MetadataConstants.PointerSize),
             "generic argument pointer array");
 
         var arguments = new List<DummyTypeSignature>(argumentCount);
         for (int ordinal = 0; ordinal < argumentCount; ordinal++) {
             ulong argumentPointer = BitConverter.ToUInt64(gameAssembly,
-                argumentArrayOffset + ordinal * Configuration.RuntimeConfiguration.Current.Layout.PointerSize);
+                argumentArrayOffset + ordinal * MetadataConstants.PointerSize);
             arguments.Add(DescribeIndirect(argumentPointer, activeOffsets, depth));
         }
         return DummyTypeSignature.GenericInstance(definitionIndex, arguments);
@@ -369,7 +369,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
         if (start < 0 || count < 0)
             throw new InvalidDataException($"{description} range [{start}, {start + count}) is invalid.");
 
-        int indexSize = Configuration.RuntimeConfiguration.Current.Layout.IndexSize;
+        int indexSize = MetadataConstants.IndexSize;
         int byteOffset = checked(tableOffset + start * indexSize);
         int byteCount = checked(count * indexSize);
         byte[] metadata = MetadataContext.Instance.Metadata;
@@ -411,7 +411,7 @@ internal sealed class HsrDummyMetadataSource : IDummyMetadataSource {
     }
 
     private static int VirtualAddressToOffset(ulong virtualAddress) {
-        ulong imageBase = Configuration.RuntimeConfiguration.Current.ImageBase;
+        ulong imageBase = PEHelper.ImageBase;
         if (virtualAddress < imageBase)
             throw new InvalidDataException($"Virtual address 0x{virtualAddress:X} is below ImageBase 0x{imageBase:X}.");
         ulong rva = virtualAddress - imageBase;

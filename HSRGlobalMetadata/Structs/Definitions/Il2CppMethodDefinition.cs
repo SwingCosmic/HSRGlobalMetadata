@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Structs.Runtime;
 using HSRGlobalMetadata.Utils;
 
@@ -7,7 +8,7 @@ public class Il2CppMethodDefinition : MetadataBase {
     private readonly int _index;
 
     public Il2CppMethodDefinition(int index) : base(MetadataContext.Instance.Metadata,
-        MetadataHeader.Instance.MethodOffset + index * Configuration.RuntimeConfiguration.Current.Layout.MethodDefinitionSize) {
+        MetadataHeader.Instance.MethodOffset + index * MetadataConstants.MethodDefinitionSize) {
         _index = index;
         Populate();
     }
@@ -48,7 +49,7 @@ public class Il2CppMethodDefinition : MetadataBase {
 
         var val = PEHelper.RvaToOffset((uint)CodeRegistration.Instance.MethodPointer);
         MethodPointer = BitConverter.ToInt64(MetadataContext.Instance.GameAssembly,
-            (int)val + _index * Configuration.RuntimeConfiguration.Current.Layout.PointerSize);
+            (int)val + _index * MetadataConstants.PointerSize);
         
         NameIndex ^= (int)lcd;
         ReturnTypeIndex ^= (int)lcd;

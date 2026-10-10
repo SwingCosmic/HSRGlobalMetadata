@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs.Definitions;
@@ -19,7 +20,7 @@ public class Il2CppGenericParameterDefinition : MetadataBase {
     public List<string> Constraints { get; } = new();
 
     public Il2CppGenericParameterDefinition(int index) : base(MetadataContext.Instance.Metadata,
-        MetadataHeader.Instance.GenericParametersOffset + Configuration.RuntimeConfiguration.Current.Layout.GenericParameterDefinitionSize * index) {
+        MetadataHeader.Instance.GenericParametersOffset + MetadataConstants.GenericParameterDefinitionSize * index) {
         _index = index;
         Populate();
     }

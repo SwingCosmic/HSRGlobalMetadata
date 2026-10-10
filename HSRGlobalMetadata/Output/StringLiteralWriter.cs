@@ -1,5 +1,5 @@
 using System.Text.Json;
-
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Structs;
 using HSRGlobalMetadata.Structs.Definitions;
 
@@ -20,7 +20,7 @@ public static class StringLiteralWriter {
       var literal = new Il2CppStringLiteral(i);
       stringLiterals.Add(new StringLiteralEntry{
         Address = $"0x{(ulong)MetadataTables.Instance.StringLiteralRva +
-          (ulong)Configuration.RuntimeConfiguration.Current.Layout.PointerSize * (ulong)i:X}",
+          MetadataConstants.PointerSize * (ulong)i:X}",
         Value = literal.Value
       });
     }

@@ -1,13 +1,14 @@
 using Mono.Cecil;
 using System.Text.Json;
 using HSRGlobalMetadata.DummyDll.Adapters;
+using HSRGlobalMetadata.DummyDll.Generation;
 
-namespace HSRGlobalMetadata.DummyDll.Generation;
+namespace HSRGlobalMetadata.DummyDll.Output;
 
 public static class DummyAssemblyExporter {
     public const string DirectoryName = "DummyDll";
 
-    public static DummyDllExportResult ExportAssemblies(string outputRoot) {
+    public static void ExportAssemblies(string outputRoot) {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputRoot);
 
         string normalizedRoot = Path.GetFullPath(outputRoot);
@@ -38,11 +39,6 @@ public static class DummyAssemblyExporter {
             }));
 
             ReplaceDirectory(stagingDirectory, targetDirectory, backupDirectory);
-            return new DummyDllExportResult(
-                outputFiles.Select(file => Path.Combine(targetDirectory, file)).ToArray(),
-                Path.Combine(targetDirectory, reportFileName),
-                generator.Report
-            );
         }
         finally {
             DeleteDirectoryIfPresent(stagingDirectory);
@@ -72,8 +68,7 @@ public static class DummyAssemblyExporter {
             Directory.Move(stagingDirectory, targetDirectory);
             if (movedExisting)
                 DeleteDirectoryIfPresent(backupDirectory);
-        }
-        catch {
+        } catch {
             if (!Directory.Exists(targetDirectory) && movedExisting && Directory.Exists(backupDirectory))
                 Directory.Move(backupDirectory, targetDirectory);
             throw;

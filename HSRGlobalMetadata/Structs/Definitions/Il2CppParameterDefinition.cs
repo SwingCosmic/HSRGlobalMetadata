@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Structs.Runtime;
 using HSRGlobalMetadata.Utils;
 
@@ -16,7 +17,7 @@ public class Il2CppParameterDefinition : MetadataBase {
     public string Name { get; private set; }
     
     public Il2CppParameterDefinition(int index) : base(MetadataContext.Instance.Metadata,
-        MetadataHeader.Instance.ParametersOffset + index * Configuration.RuntimeConfiguration.Current.Layout.ParameterDefinitionSize) {
+        MetadataHeader.Instance.ParametersOffset + index * MetadataConstants.ParameterDefinitionSize) {
         _index = index;
         Populate();
     }

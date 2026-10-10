@@ -1,5 +1,6 @@
 using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.DummyDll.Generation;
+using HSRGlobalMetadata.DummyDll.Output;
 using HSRGlobalMetadata.Output;
 using HSRGlobalMetadata.Structs;
 using HSRGlobalMetadata.Utils;
@@ -13,8 +14,7 @@ public static class Program {
         CommandLineOptions options;
         try {
             options = CommandLineParser.Parse(args);
-        }
-        catch (CommandLineException ex) {
+        } catch (CommandLineException ex) {
             Console.Error.WriteLine($"Argument error: {ex.Message}");
             Console.Error.WriteLine(CommandLineParser.Usage);
             return 2;
@@ -29,15 +29,6 @@ public static class Program {
         folderPath = Path.GetFullPath(folderPath.Trim().Trim('"'));
         if (!Directory.Exists(folderPath))
             return Fail($"Game directory does not exist: {folderPath}");
-
-        VersionProfile profile;
-        try {
-            profile = options.ResolveProfile();
-            RuntimeConfiguration.Initialize(profile);
-        }
-        catch (Exception ex) when (ex is CommandLineException or ArgumentException) {
-            return Fail(ex.Message, 2);
-        }
 
         string gameAssemblyPath = Path.Combine(folderPath, "GameAssembly.dll");
         string metadataPath = Path.Combine(folderPath, "StarRail_Data", "il2cpp_data", "Metadata", "global-metadata.dat");
@@ -54,8 +45,6 @@ public static class Program {
             ? Path.Combine(folderPath, "dump")
             : Path.GetFullPath(options.OutputDirectory);
 
-        PrintEffectiveConfiguration(options, profile, folderPath, outputRoot);
-
         try {
             PEHelper.ReadPEHeader(gameAssemblyPath);
 
@@ -67,8 +56,6 @@ public static class Program {
             MetadataTables.Initialize(gameAssemblyPath);
             Console.WriteLine("Initializing cache...");
             MetadataCache.Initialize();
-            if (options.GenerateDummyDll)
-                PrintIl2CppTypeBitDistribution();
             Console.WriteLine("Initialization complete.");
 
             if (options.GenerateDump) {
@@ -82,24 +69,8 @@ public static class Program {
             }
 
             if (options.GenerateDummyDll) {
-                Console.WriteLine("Writing metadata DummyDll assemblies...");
-                DummyDllExportResult result = DummyAssemblyExporter.ExportAssemblies(outputRoot);
-                Console.WriteLine(
-                    $"Wrote {result.AssemblyPaths.Count} DummyDll assemblies with " +
-                    $"{result.Report.TypeCount} types, {result.Report.FieldCount} fields and " +
-                    $"{result.Report.PropertyCount} properties, {result.Report.MethodCount} methods and " +
-                    $"{result.Report.EventCount} events to " +
-                    $"{Path.Combine(outputRoot, DummyAssemblyExporter.DirectoryName)}."
-                );
-                Console.WriteLine(
-                    $"Serializable public instance fields: {result.Report.SerializableFieldCount}; " +
-                    $"serializable-field placeholders: {result.Report.SerializableFieldPlaceholderCount}; " +
-                    $"all type placeholders: {result.Report.PlaceholderTypeCount}; " +
-                    $"prepared public members: {result.Report.PreparedPublicMemberCount}; " +
-                    $"public-member placeholders: {result.Report.PublicMemberPlaceholderCount}; " +
-                    $"addressed methods: {result.Report.AddressedMethodCount}; " +
-                    $"diagnostics: {result.Report.Diagnostics.Count}; report: {result.ReportPath}"
-                );
+                Console.WriteLine("Writing Dummy DLL assemblies, this will take a while...");
+                DummyAssemblyExporter.ExportAssemblies(outputRoot);
             }
 
             Console.WriteLine("Finished.");
@@ -107,43 +78,15 @@ public static class Program {
         }
         catch (Exception ex) {
             Console.Error.WriteLine($"Failed: {ex.Message}");
-            if (options.Strict)
+            if (options.Debug)
                 Console.Error.WriteLine(ex);
             return 1;
         }
     }
 
-    private static void PrintEffectiveConfiguration(
-        CommandLineOptions options,
-        VersionProfile profile,
-        string gameDirectory,
-        string outputRoot
-    ) {
-        Console.WriteLine("Effective configuration:");
-        Console.WriteLine($"  Game directory: {gameDirectory}");
-        Console.WriteLine($"  Output root: {outputRoot}");
-        Console.WriteLine($"  Version: {profile.Name}");
-        Console.WriteLine($"  Metadata magic: {profile.MetadataMagicText}");
-        Console.WriteLine($"  ImageBase: {profile.ImageBaseText}");
-        Console.WriteLine($"  Type/Image/Method strides: {profile.Layout.TypeDefinitionSize}/{profile.Layout.ImageDefinitionSize}/{profile.Layout.MethodDefinitionSize}");
-        Console.WriteLine($"  Outputs: dump.cs={options.GenerateDump}, stringliterals.json={options.GenerateStringLiterals}, DummyDll={options.GenerateDummyDll}");
-        Console.WriteLine($"  Strict validation: {options.Strict}");
-    }
-
     private static int Fail(string message, int exitCode = 1) {
         Console.Error.WriteLine(message);
         return exitCode;
-    }
-
-    private static void PrintIl2CppTypeBitDistribution() {
-        int bit5 = MetadataCache.Types.Count(type => (type.PackedFlags & 0x20) != 0);
-        int bit6 = MetadataCache.Types.Count(type => (type.PackedFlags & 0x40) != 0);
-        int bit7 = MetadataCache.Types.Count(type => (type.PackedFlags & 0x80) != 0);
-        Console.WriteLine(
-            $"Il2CppType high-bit distribution: bit5={bit5}, bit6={bit6}, bit7={bit7}; " +
-            $"configured byref={MetadataCache.Types.Count(type => type.IsByReference)}, " +
-            $"pinned={MetadataCache.Types.Count(type => type.IsPinned)}."
-        );
     }
 
     private static string Prompt() {

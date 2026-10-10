@@ -17,7 +17,7 @@ public class CodeRegistration : MetadataBase {
         _instance = new CodeRegistration(bytes);
     }
 
-    private long ToFileOffset(long va) => va - checked((long)Configuration.RuntimeConfiguration.Current.ImageBase);
+    private long ToFileOffset(long va) => va - checked((long)PEHelper.ImageBase);
     private long ReadPtr(int offset) => ToFileOffset(BitConverter.ToInt64(_bytes, offset));
 
     public long MethodPointer { get; private set; }

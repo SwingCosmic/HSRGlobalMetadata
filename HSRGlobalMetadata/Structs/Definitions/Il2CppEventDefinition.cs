@@ -1,3 +1,4 @@
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs.Definitions;
@@ -23,7 +24,7 @@ public class Il2CppEventDefinition : MetadataBase {
     public short RemoveMethodIndex { get; set; }
 
     public Il2CppEventDefinition(int index) : base(MetadataContext.Instance.Metadata,
-        MetadataHeader.Instance.EventsOffset + Configuration.RuntimeConfiguration.Current.Layout.EventDefinitionSize * index) {
+        MetadataHeader.Instance.EventsOffset + MetadataConstants.EventDefinitionSize * index) {
         _index = index;
         Populate();
     }

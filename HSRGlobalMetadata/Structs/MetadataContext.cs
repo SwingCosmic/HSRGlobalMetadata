@@ -13,15 +13,14 @@ public class MetadataContext {
 
     public static void Initialize(string metadataPath, string startupPath, string gameAssemblyPath) {
         byte[] raw = File.ReadAllBytes(metadataPath);
-        VersionProfile profile = RuntimeConfiguration.Current;
-        int headerSize = profile.Layout.MetadataHeaderSize;
+        int headerSize = MetadataConstants.HeaderSize;
         if (raw.Length < headerSize)
             throw new InvalidDataException($"global-metadata.dat is smaller than the configured header size ({headerSize} bytes).");
 
         uint actualMagic = BinaryPrimitives.ReadUInt32LittleEndian(raw);
-        if (actualMagic != profile.MetadataMagic) {
+        if (actualMagic != MetadataConstants.MetadataMagic) {
             throw new InvalidDataException(
-                $"global-metadata.dat magic mismatch. Expected {profile.MetadataMagicText}, got 0x{actualMagic:X8}. " +
+                $"global-metadata.dat magic mismatch. Expected {MetadataConstants.MetadataMagic}, got 0x{actualMagic:X8}. " +
                 "Select the correct --version or provide --metadata-magic."
             );
         }

@@ -1,4 +1,5 @@
-﻿using HSRGlobalMetadata.Utils;
+﻿using HSRGlobalMetadata.Configuration;
+using HSRGlobalMetadata.Utils;
 
 namespace HSRGlobalMetadata.Structs;
 
@@ -89,14 +90,13 @@ public class MetadataHeader : MetadataBase {
     }
 
     public static void Initialize(string gameAssemblyPath) {
-        Configuration.VersionProfile profile = Configuration.RuntimeConfiguration.Current;
-        byte[] magic = BitConverter.GetBytes(profile.MetadataMagic);
+        byte[] magic = BitConverter.GetBytes(MetadataConstants.MetadataMagic);
         var headerOffset = PatternScanner.FindPatternInFile(gameAssemblyPath, magic, new[] { true, true, true, true });
         if (headerOffset == -1) {
-            throw new InvalidDataException($"Failed to find metadata header magic {profile.MetadataMagicText} in GameAssembly.dll.");
+            throw new InvalidDataException($"Failed to find metadata header magic {MetadataConstants.MetadataMagic} in GameAssembly.dll.");
         }
 
-        int headerSize = profile.Layout.MetadataHeaderSize;
+        int headerSize = MetadataConstants.HeaderSize;
         if (headerOffset > MetadataContext.Instance.GameAssembly.Length - headerSize)
             throw new InvalidDataException("Metadata header extends beyond GameAssembly.dll.");
 

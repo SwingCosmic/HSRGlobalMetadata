@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using HSRGlobalMetadata.Configuration;
 using HSRGlobalMetadata.Structs;
 using HSRGlobalMetadata.Structs.Definitions;
 using HSRGlobalMetadata.Structs.Runtime;
@@ -14,9 +15,8 @@ public static class MetadataCache {
     
     public static void Initialize() {
         var header = MetadataHeader.Instance;
-        var layout = Configuration.RuntimeConfiguration.Current.Layout;
-        int typeCount = header.TypeDefinitionsSize / layout.TypeDefinitionSize;
-        int imageCount = header.ImagesSize / layout.ImageDefinitionSize;
+        int typeCount = header.TypeDefinitionsSize / MetadataConstants.TypeDefinitionSize;
+        int imageCount = header.ImagesSize / MetadataConstants.ImageDefinitionSize;
         if (header.TypeDefinitionsSize > MetadataContext.Instance.Metadata.Length) {
           throw new Exception("Sanity check failed for metadata validity.");
         }        
@@ -47,7 +47,7 @@ public static class MetadataCache {
             j++;
         }
 
-        int genericFuncCount = header.MethodSpecsSize / layout.GenericFunctionDefinitionSize;
+        int genericFuncCount = header.MethodSpecsSize / MetadataConstants.GenericFunctionDefinitionSize;
         GenericFuncDefs = new Dictionary<int, Il2CppGenericFunctionDefinition>(genericFuncCount);
         for (int i = 0; i < genericFuncCount; i++) {
             var genericFuncDef = new Il2CppGenericFunctionDefinition(i);

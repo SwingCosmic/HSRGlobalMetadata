@@ -16,7 +16,7 @@ public class MetadataRegistration : MetadataBase {
         _instance = new MetadataRegistration(bytes);
     }
 
-    private long ToFileOffset(long va) => va - checked((long)Configuration.RuntimeConfiguration.Current.ImageBase);
+    private long ToFileOffset(long va) => va - checked((long)PEHelper.ImageBase);
     private long ReadPtr(int offset) => ToFileOffset(BitConverter.ToInt64(_bytes, offset));
 
     [MetadataTag(0x48, MetadataOperation.SUB, 1455078204)]
